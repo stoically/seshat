@@ -1093,12 +1093,12 @@ fn encrypted_db() {
 
     let profile = Profile::new("Alice", "");
     db.add_event(EVENT.clone(), profile.clone());
-    db.commit().unwrap();
+    assert!(db.commit().is_ok(), "commit an event to the encrypted database");
     assert!(!connection.is_empty().unwrap());
 
     drop(db);
     let db = Database::new(tmpdir.path());
-    assert!(db.is_err(), "db should be encrypted");
+    assert!(db.is_err(), "opening the database without a passphrase should fail");
 
     let mut db = Database::new_with_config(tmpdir.path(), &db_config).unwrap();
     let connection = db.get_connection().unwrap();
