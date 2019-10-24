@@ -33,14 +33,14 @@ use tempfile::tempdir;
 
 use crate::index::{Index, IndexSearcher, Writer};
 use crate::types::{
-    Config, CrawlerCheckpoint, Event, EventContext, EventId, Profile, Result,
-    SearchConfig, SearchResult, ThreadMessage,
+    Config, CrawlerCheckpoint, Error, Event, EventContext, EventId, Profile, Result, SearchConfig,
+    SearchResult, ThreadMessage,
 };
 
 #[cfg(test)]
-use crate::EVENT;
-#[cfg(test)]
 use crate::types::CheckpointDirection;
+#[cfg(test)]
+use crate::EVENT;
 
 /// The main entry point to the index and database.
 pub struct Searcher {
@@ -173,11 +173,18 @@ impl Database {
 
         let connection = Arc::new(pool.get()?);
 
+        let passphrase = "wordpass";
+
+        Database::unlock(&connection, passphrase)?;
         Database::create_tables(&connection)?;
 
         let index = Database::create_index(&path, &config)?;
         let writer = index.get_writer()?;
-        let (t_handle, tx) = Database::spawn_writer(pool.get()?, writer);
+        let writer_connection = pool.get()?;
+
+        Database::unlock(&writer_connection, passphrase)?;
+
+        let (t_handle, tx) = Database::spawn_writer(writer_connection, writer);
 
         Ok(Database {
             path: path.into(),
@@ -187,6 +194,25 @@ impl Database {
             tx,
             index,
         })
+    }
+
+    fn unlock(connection: &rusqlite::Connection, passphrase: &str) -> Result<()> {
+        let mut statement = connection.prepare("PRAGMA cipher_version")?;
+        let results = statement.query_map(NO_PARAMS, |row| row.get::<usize, String>(0))?;
+        // TODO turn this into an error
+        assert!(results.count() == 1);
+
+        connection.pragma_update(None, "key", &passphrase as &dyn ToSql)?;
+
+        let count: std::result::Result<i64, rusqlite::Error> =
+            connection.query_row("SELECT COUNT(*) FROM sqlite_master", NO_PARAMS, |row| {
+                row.get(0)
+            });
+
+        match count {
+            Ok(_) => Ok(()),
+            Err(_) => Err(Error::DatabaseUnlockError("Invalid passphrase".to_owned())),
+        }
     }
 
     /// Get the size of the database.
@@ -780,6 +806,7 @@ impl Database {
     /// Note that this connection should only be used for reading.
     pub fn get_connection(&mut self) -> Result<Connection> {
         let connection = self.pool.get()?;
+        Database::unlock(&connection, "wordpass")?;
         Ok(Connection(connection))
     }
 

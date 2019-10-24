@@ -212,6 +212,9 @@ pub enum Error {
     /// Error signaling that there was an error while reading from the
     /// filesystem.
     FsError(fs_extra::error::Error),
+    /// Error signaling that the database passphrase was incorrect.
+    #[fail(display = "Error unlocking the database: {}", _0)]
+    DatabaseUnlockError(String),
 }
 
 /// Result type for seshat operations.
