@@ -1082,3 +1082,25 @@ fn is_empty() {
     db.commit().unwrap();
     assert!(!connection.is_empty().unwrap());
 }
+
+#[test]
+fn encrypted_db() {
+    let tmpdir = tempdir().unwrap();
+    let db_config = Config::new().set_passphrase("test");
+    let mut db = Database::new_with_config(tmpdir.path(), &db_config).unwrap();
+    let connection = db.get_connection().unwrap();
+    assert!(connection.is_empty().unwrap());
+
+    let profile = Profile::new("Alice", "");
+    db.add_event(EVENT.clone(), profile.clone());
+    db.commit().unwrap();
+    assert!(!connection.is_empty().unwrap());
+
+    drop(db);
+    let db = Database::new(tmpdir.path());
+    assert!(db.is_err(), "db should be encrypted");
+
+    let mut db = Database::new_with_config(tmpdir.path(), &db_config).unwrap();
+    let connection = db.get_connection().unwrap();
+    assert!(!connection.is_empty().unwrap());
+}
