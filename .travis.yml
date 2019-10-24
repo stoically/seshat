@@ -28,7 +28,7 @@ before_install:
     cd C:\ProgramData\chocolatey\lib\SQLite\tools;
     lib /def:sqlite3.def /out:sqlite3.lib;
     elif [[ "$TRAVIS_OS_NAME" == "osx" ]] ; then
-    brew install sqlcipher;
+    HOMEBREW_NO_AUTO_UPDATE=1 brew install sqlcipher;
     nvm install $TRAVIS_NODE_VERSION;
     nvm use ${TRAVIS_NODE_VERSION};
     else
