@@ -80,6 +80,7 @@ pub struct Database {
     _write_thread: JoinHandle<()>,
     tx: Sender<ThreadMessage>,
     index: Index,
+    passphrase: Option<String>,
 }
 
 /// A Seshat database connection.
@@ -172,17 +173,17 @@ impl Database {
         let pool = r2d2::Pool::new(manager)?;
 
         let connection = Arc::new(pool.get()?);
+        let writer_connection = pool.get()?;
 
-        let passphrase = "wordpass";
+        if let Some(ref p) = config.passphrase {
+            Database::unlock(&connection, p)?;
+            Database::unlock(&writer_connection, p)?;
+        }
 
-        Database::unlock(&connection, passphrase)?;
         Database::create_tables(&connection)?;
 
         let index = Database::create_index(&path, &config)?;
         let writer = index.get_writer()?;
-        let writer_connection = pool.get()?;
-
-        Database::unlock(&writer_connection, passphrase)?;
 
         let (t_handle, tx) = Database::spawn_writer(writer_connection, writer);
 
@@ -193,6 +194,7 @@ impl Database {
             _write_thread: t_handle,
             tx,
             index,
+            passphrase: config.passphrase.clone(),
         })
     }
 
@@ -806,7 +808,11 @@ impl Database {
     /// Note that this connection should only be used for reading.
     pub fn get_connection(&mut self) -> Result<Connection> {
         let connection = self.pool.get()?;
-        Database::unlock(&connection, "wordpass")?;
+
+        if let Some(ref p) = self.passphrase {
+            Database::unlock(&connection, p)?;
+        }
+
         Ok(Connection(connection))
     }
 

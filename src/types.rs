@@ -519,6 +519,7 @@ impl From<&str> for Language {
 /// Configuration for the seshat database.
 pub struct Config {
     pub(crate) language: Language,
+    pub(crate) passphrase: Option<String>,
 }
 
 impl Config {
@@ -532,8 +533,17 @@ impl Config {
     /// # Arguments
     ///
     /// * `language` - The language that will be used to index messages.
-    pub fn set_language(&mut self, language: &Language) -> &mut Self {
+    pub fn set_language(mut self, language: &Language) -> Self {
         self.language = language.clone();
+        self
+    }
+
+    /// Set the passphrase of the database.
+    /// # Arguments
+    ///
+    /// * `passphrase` - The passphrase of the database.
+    pub fn set_passphrase<P: Into<String>>(mut self, passphrase: P) -> Self {
+        self.passphrase = Some(passphrase.into());
         self
     }
 }
@@ -542,6 +552,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             language: Language::Unknown,
+            passphrase: None
         }
     }
 }
