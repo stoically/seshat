@@ -27,13 +27,13 @@ before_install:
     choco install sqlite;
     cd C:\ProgramData\chocolatey\lib\SQLite\tools;
     lib /def:sqlite3.def /out:sqlite3.lib;
-    elif [[ $TRAVIS_OS_NAME" == "osx" ]] ; then
+    elif [[ "$TRAVIS_OS_NAME" == "osx" ]] ; then
     brew install sqlcipher;
     nvm install $TRAVIS_NODE_VERSION;
     nvm use ${TRAVIS_NODE_VERSION};
     else
-    sudo apt-get update -q
-    sudo apt-get install libsqlcipher-dev -y
+    sudo apt-get update -q;
+    sudo apt-get install libsqlcipher-dev -y;
     nvm install $TRAVIS_NODE_VERSION;
     nvm use ${TRAVIS_NODE_VERSION};
     fi
