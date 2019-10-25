@@ -215,6 +215,15 @@ pub enum Error {
     /// Error signaling that the database passphrase was incorrect.
     #[fail(display = "Error unlocking the database: {}", _0)]
     DatabaseUnlockError(String),
+    /// Error when opening the Seshat database and reading the database version.
+    #[fail(display = "Database version missmatch.")]
+    DatabaseVersionError,
+    /// Error when opening the Seshat database and reading the database version.
+    #[fail(display = "Error opening the database")]
+    DatabaseOpenError(String),
+    /// Error signaling that sqlcipher support is missing.
+    #[fail(display = "Sqlcipher error: {}", _0)]
+    SqlCipherError(String),
 }
 
 /// Result type for seshat operations.

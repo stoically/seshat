@@ -184,8 +184,14 @@ impl Database {
 
         Database::create_tables(&connection)?;
 
-        let version = Database::get_version(&connection)?;
-        assert!(version == DATABASE_VERSION);
+        let version = match Database::get_version(&connection) {
+            Ok(v) => v,
+            Err(e) => return Err(Error::DatabaseOpenError(e.to_string()))
+        };
+
+        if version != DATABASE_VERSION {
+            return Err(Error::DatabaseVersionError);
+        }
 
         let index = Database::create_index(&path, &config)?;
         let writer = index.get_writer()?;
@@ -206,8 +212,10 @@ impl Database {
     fn unlock(connection: &rusqlite::Connection, passphrase: &str) -> Result<()> {
         let mut statement = connection.prepare("PRAGMA cipher_version")?;
         let results = statement.query_map(NO_PARAMS, |row| row.get::<usize, String>(0))?;
-        // TODO turn this into an error
-        assert!(results.count() == 1);
+
+        if results.count() != 1 {
+            return Err(Error::SqlCipherError("Sqlcipher support is missing"))
+        }
 
         connection.pragma_update(None, "key", &passphrase as &dyn ToSql)?;
 
@@ -1117,9 +1125,17 @@ fn is_empty() {
 fn encrypted_db() {
     let tmpdir = tempdir().unwrap();
     let db_config = Config::new().set_passphrase("test");
-    let mut db = Database::new_with_config(tmpdir.path(), &db_config).unwrap();
-    let connection = db.get_connection().unwrap();
-    assert!(connection.is_empty().unwrap());
+    let mut db = match Database::new_with_config(tmpdir.path(), &db_config) {
+        Ok(db) => db,
+        Err(e) => panic!("Coulnd't open encrypted database {}", e),
+    };
+
+    let connection = match db.get_connection() {
+        Ok(c) => c,
+        Err(e) => panic!("Could not get database connection {}", e)
+    };
+
+    assert!(connection.is_empty().unwrap(), "New database should be empty");
 
     let profile = Profile::new("Alice", "");
     db.add_event(EVENT.clone(), profile.clone());
