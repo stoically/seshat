@@ -214,7 +214,7 @@ impl Database {
         let results = statement.query_map(NO_PARAMS, |row| row.get::<usize, String>(0))?;
 
         if results.count() != 1 {
-            return Err(Error::SqlCipherError("Sqlcipher support is missing"))
+            return Err(Error::SqlCipherError("Sqlcipher support is missing".to_string()))
         }
 
         connection.pragma_update(None, "key", &passphrase as &dyn ToSql)?;
