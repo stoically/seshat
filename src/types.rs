@@ -552,7 +552,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             language: Language::Unknown,
-            passphrase: None
+            passphrase: None,
         }
     }
 }

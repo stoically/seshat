@@ -42,6 +42,8 @@ use crate::types::CheckpointDirection;
 #[cfg(test)]
 use crate::EVENT;
 
+const DATABASE_VERSION: i64 = 1;
+
 /// The main entry point to the index and database.
 pub struct Searcher {
     inner: IndexSearcher,
@@ -181,6 +183,9 @@ impl Database {
         }
 
         Database::create_tables(&connection)?;
+
+        let version = Database::get_version(&connection)?;
+        assert!(version == DATABASE_VERSION);
 
         let index = Database::create_index(&path, &config)?;
         let writer = index.get_writer()?;
@@ -394,6 +399,23 @@ impl Database {
         receiver
     }
 
+    fn get_version(connection: &rusqlite::Connection) -> Result<i64> {
+        connection.execute(
+            "INSERT OR IGNORE INTO seshat_version ( version ) VALUES(?1)",
+            &[DATABASE_VERSION],
+        )?;
+
+        let version: i64 =
+            connection
+                .query_row("SELECT version FROM seshat_version", NO_PARAMS, |row| {
+                    row.get(0)
+                })?;
+
+        // Do database migrations here before bumping the database version.
+
+        Ok(version)
+    }
+
     fn create_tables(conn: &rusqlite::Connection) -> Result<()> {
         conn.execute(
             "CREATE TABLE IF NOT EXISTS profiles (
@@ -431,6 +453,14 @@ impl Database {
                 full_crawl BOOLEAN NOT NULL,
                 direction TEXT NOT NULL,
                 UNIQUE(room_id,token,full_crawl,direction)
+            )",
+            NO_PARAMS,
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS seshat_version (
+                id INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+                version INTEGER NOT NULL
             )",
             NO_PARAMS,
         )?;
@@ -1093,12 +1123,18 @@ fn encrypted_db() {
 
     let profile = Profile::new("Alice", "");
     db.add_event(EVENT.clone(), profile.clone());
-    assert!(db.commit().is_ok(), "commit an event to the encrypted database");
+    assert!(
+        db.commit().is_ok(),
+        "commit an event to the encrypted database"
+    );
     assert!(!connection.is_empty().unwrap());
 
     drop(db);
     let db = Database::new(tmpdir.path());
-    assert!(db.is_err(), "opening the database without a passphrase should fail");
+    assert!(
+        db.is_err(),
+        "opening the database without a passphrase should fail"
+    );
 
     let mut db = Database::new_with_config(tmpdir.path(), &db_config).unwrap();
     let connection = db.get_connection().unwrap();
