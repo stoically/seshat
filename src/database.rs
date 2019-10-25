@@ -184,7 +184,7 @@ impl Database {
 
         Database::create_tables(&connection)?;
 
-        let version = match Database::get_version(&connection) {
+        let version = match Database::get_version(&writer_connection) {
             Ok(v) => v,
             Err(e) => return Err(Error::DatabaseOpenError(e.to_string()))
         };
