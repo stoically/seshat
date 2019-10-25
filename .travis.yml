@@ -43,7 +43,7 @@ before_install:
   - npm i -g yarn@latest neon-cli@latest
 
 script:
-  - cargo test
+  - cargo test -- --test-threads=1
   - cd seshat-node
   - yarn install
   - yarn test
