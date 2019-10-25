@@ -19,6 +19,7 @@ use tantivy::tokenizer::Tokenizer;
 use crate::config::{Language, SearchConfig};
 use crate::events::{Event, EventId, EventType};
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
+use crate::aesmmapdir::AesMmapDirectory;
 
 // Tantivy requires at least 3MB per writer thread and will panic if we
 // give it less than 3MB for the total writer heap size. The amount of writer 
@@ -167,7 +168,8 @@ impl Index {
 
         let schema = schemabuilder.build();
 
-        let index_dir = tv::directory::MmapDirectory::open(path)?;
+        // let index_dir = tv::directory::MmapDirectory::open(path)?;
+        let index_dir = AesMmapDirectory::open(path, "1234567890123456")?;
 
         let index = tv::Index::open_or_create(index_dir, schema)?;
         let reader = index.reader()?;

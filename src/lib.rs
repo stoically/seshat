@@ -26,6 +26,7 @@ mod error;
 mod events;
 mod index;
 mod japanese_tokenizer;
+mod aesmmapdir;
 
 pub use database::{Connection, Database, SearchResult, Searcher};
 
