@@ -219,7 +219,7 @@ pub enum Error {
     #[fail(display = "Database version missmatch.")]
     DatabaseVersionError,
     /// Error when opening the Seshat database and reading the database version.
-    #[fail(display = "Error opening the database")]
+    #[fail(display = "Error opening the database: {}", _0)]
     DatabaseOpenError(String),
     /// Error signaling that sqlcipher support is missing.
     #[fail(display = "Sqlcipher error: {}", _0)]
