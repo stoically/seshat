@@ -24,6 +24,7 @@ mod database;
 mod index;
 mod japanese_tokenizer;
 mod types;
+mod aesmmapdir;
 
 pub use database::Connection;
 pub use database::Database;

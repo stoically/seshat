@@ -18,6 +18,7 @@ use tantivy::tokenizer::Tokenizer;
 
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
 use crate::types::{Event, EventId, EventType, Language, SearchConfig};
+use crate::aesmmapdir::AesMmapDirectory;
 
 #[cfg(test)]
 use tempfile::TempDir;
@@ -154,7 +155,8 @@ impl Index {
 
         let schema = schemabuilder.build();
 
-        let index_dir = tv::directory::MmapDirectory::open(path)?;
+        // let index_dir = tv::directory::MmapDirectory::open(path)?;
+        let index_dir = AesMmapDirectory::open(path, "1234567890123456")?;
 
         let index = tv::Index::open_or_create(index_dir, schema)?;
         let reader = index.reader()?;
