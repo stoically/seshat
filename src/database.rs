@@ -1139,13 +1139,15 @@ fn encrypted_db() {
 
     let profile = Profile::new("Alice", "");
     db.add_event(EVENT.clone(), profile.clone());
-    assert!(
-        db.commit().is_ok(),
-        "commit an event to the encrypted database"
-    );
-    assert!(!connection.is_empty().unwrap());
+
+    match db.commit() {
+        Ok(_) => (),
+        Err(e) => panic!("Could not commit events to database {}", e),
+    }
+    assert!(!connection.is_empty().unwrap(), "Database shouldn't be empty anymore");
 
     drop(db);
+
     let db = Database::new(tmpdir.path());
     assert!(
         db.is_err(),
