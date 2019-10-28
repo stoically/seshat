@@ -175,16 +175,14 @@ impl Database {
         let pool = r2d2::Pool::new(manager)?;
 
         let connection = Arc::new(pool.get()?);
-        let writer_connection = pool.get()?;
 
         if let Some(ref p) = config.passphrase {
             Database::unlock(&connection, p)?;
-            Database::unlock(&writer_connection, p)?;
         }
 
         Database::create_tables(&connection)?;
 
-        let version = match Database::get_version(&writer_connection) {
+        let version = match Database::get_version(&connection) {
             Ok(v) => v,
             Err(e) => return Err(Error::DatabaseOpenError(e.to_string()))
         };
@@ -195,6 +193,15 @@ impl Database {
 
         let index = Database::create_index(&path, &config)?;
         let writer = index.get_writer()?;
+
+        // Warning: Do not open a new db connection before we write the tables
+        // to the DB, otherwise sqlcipher might think that we are initializing
+        // a new database and we'll end up with two connections using differing
+        // keys and writes/reads to one of the connections might fail.
+        let writer_connection = pool.get()?;
+        if let Some(ref p) = config.passphrase {
+            Database::unlock(&writer_connection, p)?;
+        }
 
         let (t_handle, tx) = Database::spawn_writer(writer_connection, writer);
 
