@@ -9,8 +9,6 @@ use tantivy::directory::error::{DeleteError, LockError, OpenReadError, OpenWrite
 use tantivy::directory::Directory;
 use tantivy::directory::WatchHandle;
 use tantivy::directory::{DirectoryLock, Lock, ReadOnlySource, WatchCallback, WritePtr, TerminatingWrite, AntiCallToken};
-use tantivy::schema::SchemaBuilder;
-use tantivy::Index;
 
 pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write> (AesWriter<E, W>);
 
