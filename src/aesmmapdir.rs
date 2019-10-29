@@ -65,7 +65,7 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Deref for AesFile<E, 
 #[derive(Clone, Debug)]
 pub struct AesMmapDirectory {
     mmap_dir: tantivy::directory::MmapDirectory,
-    passphrase: String,
+    store_key: Vec<u8>,
 }
 
 impl AesMmapDirectory {
@@ -92,7 +92,7 @@ impl AesMmapDirectory {
 
         Ok(AesMmapDirectory {
             mmap_dir,
-            passphrase: passphrase.to_string(),
+            store_key,
         })
     }
 
@@ -266,7 +266,7 @@ impl Directory for AesMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
 
-        let decryptor = AesSafe128Decryptor::new(self.passphrase.as_bytes());
+        let decryptor = AesSafe128Decryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
@@ -289,7 +289,7 @@ impl Directory for AesMmapDirectory {
             Err(e) => panic!(e.to_string()),
         };
 
-        let encryptor = AesSafe128Encryptor::new(self.passphrase.as_bytes());
+        let encryptor = AesSafe128Encryptor::new(&self.store_key);
         let writer = AesWriter::new(file, encryptor).unwrap();
         let file = AesFile(writer);
         Ok(BufWriter::new(Box::new(file)))
@@ -298,7 +298,7 @@ impl Directory for AesMmapDirectory {
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
         let data = self.mmap_dir.atomic_read(path)?;
 
-        let decryptor = AesSafe128Decryptor::new(self.passphrase.as_bytes());
+        let decryptor = AesSafe128Decryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(data), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
@@ -307,7 +307,7 @@ impl Directory for AesMmapDirectory {
     }
 
     fn atomic_write(&mut self, path: &Path, data: &[u8]) -> std::io::Result<()> {
-        let encryptor = AesSafe128Encryptor::new(self.passphrase.as_bytes());
+        let encryptor = AesSafe128Encryptor::new(&self.store_key);
         let mut encrypted = Vec::new();
         {
             let mut writer = AesWriter::new(&mut encrypted, encryptor)?;
