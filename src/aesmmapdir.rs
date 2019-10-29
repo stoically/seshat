@@ -1,25 +1,30 @@
-use std::io::{Write, BufWriter, Read, Cursor, ErrorKind};
-use std::path::{Path};
-use std::ops::Deref;
+use rand::{thread_rng, Rng};
 use std::fs::File;
-use rand::{Rng, thread_rng};
+use std::io::Error as IoError;
+use std::io::{BufWriter, Cursor, ErrorKind, Read, Write};
+use std::ops::Deref;
+use std::path::Path;
 
-use crypto::aessafe::{AesSafe128Encryptor, AesSafe128Decryptor};
+use crypto::aes::{cbc_decryptor, cbc_encryptor, KeySize};
+use crypto::aessafe::{AesSafe128Decryptor, AesSafe128Encryptor};
+use crypto::blockmodes::PkcsPadding;
+use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
+use crypto::hmac::Hmac;
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::Sha256;
-use crypto::hmac::Hmac;
-use crypto::aes::{cbc_encryptor, cbc_decryptor, KeySize};
-use crypto::blockmodes::PkcsPadding;
-use crypto::buffer::{RefReadBuffer, RefWriteBuffer, BufferResult, WriteBuffer, ReadBuffer};
 
-use aesstream::{AesWriter, AesReader};
+use aesstream::{AesReader, AesWriter};
 
-use tantivy::directory::error::{DeleteError, LockError, OpenReadError, OpenWriteError, OpenDirectoryError};
+use tantivy::directory::error::{
+    DeleteError, LockError, OpenDirectoryError, OpenReadError, OpenWriteError,
+};
 use tantivy::directory::Directory;
 use tantivy::directory::WatchHandle;
-use tantivy::directory::{DirectoryLock, Lock, ReadOnlySource, WatchCallback, WritePtr, TerminatingWrite, AntiCallToken};
+use tantivy::directory::{
+    AntiCallToken, DirectoryLock, Lock, ReadOnlySource, TerminatingWrite, WatchCallback, WritePtr,
+};
 
-pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write> (AesWriter<E, W>);
+pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write>(AesWriter<E, W>);
 
 const KEYFILE: &str = "seshat.key";
 const SALT_SIZE: usize = 15;
@@ -41,7 +46,6 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Drop for AesFile<E, W
     }
 }
 
-
 impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> TerminatingWrite for AesFile<E, W> {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
         Ok(())
@@ -55,11 +59,10 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Deref for AesFile<E, 
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct AesMmapDirectory {
     mmap_dir: tantivy::directory::MmapDirectory,
-    passphrase: String
+    passphrase: String,
 }
 
 impl AesMmapDirectory {
@@ -83,7 +86,10 @@ impl AesMmapDirectory {
 
         println!("HELLO KEY {:?}", store_key);
 
-        Ok(AesMmapDirectory { mmap_dir, passphrase: passphrase.to_string() })
+        Ok(AesMmapDirectory {
+            mmap_dir,
+            passphrase: passphrase.to_string(),
+        })
     }
 
     fn load_store_key(mut key_file: File, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
@@ -104,7 +110,14 @@ impl AesMmapDirectory {
         let res;
         {
             let mut read_buf = RefReadBuffer::new(&encrypted_key);
-            res = decryptor.decrypt(&mut read_buf, &mut write_buf, true).unwrap();
+            res = decryptor
+                .decrypt(&mut read_buf, &mut write_buf, true)
+                .map_err(|e| {
+                    IoError::new(
+                        ErrorKind::Other,
+                        format!("error decrypting store key: {:?}", e),
+                    )
+                })?;
             remaining = read_buf.remaining();
         }
 
@@ -113,7 +126,9 @@ impl AesMmapDirectory {
 
         match res {
             BufferResult::BufferUnderflow => (),
-            BufferResult::BufferOverflow => panic!("HEEEEL"),
+            BufferResult::BufferOverflow => {
+                return Err(IoError::new(ErrorKind::Other, "error decrypting store key").into())
+            }
         }
 
         Ok(out.to_vec())
@@ -122,14 +137,14 @@ impl AesMmapDirectory {
     fn create_new_store(key_path: &Path, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
-        let (derived_key, salt) = AesMmapDirectory::derive_key(passphrase);
+        let (derived_key, salt) = AesMmapDirectory::derive_key(passphrase)?;
 
         // Generate a random initialization vector for our AES encryptor.
-        let iv = AesMmapDirectory::generate_iv();
+        let iv = AesMmapDirectory::generate_iv()?;
         // Generate a new random store key. This key will encrypt our tantivy
         // indexing files. The key itself is stored encrypted using the derived
         // key.
-        let store_key = AesMmapDirectory::generate_key();
+        let store_key = AesMmapDirectory::generate_key()?;
         let mut encryptor = cbc_encryptor(KeySize::KeySize128, &derived_key, &iv, PkcsPadding);
 
         let mut read_buf = RefReadBuffer::new(&store_key);
@@ -144,7 +159,14 @@ impl AesMmapDirectory {
         key_file.write_all(&salt)?;
 
         loop {
-            let res = encryptor.encrypt(&mut read_buf, &mut write_buf, true).unwrap();
+            let res = encryptor
+                .encrypt(&mut read_buf, &mut write_buf, true)
+                .map_err(|e| {
+                    IoError::new(
+                        ErrorKind::Other,
+                        format!("unable to encrypt store key: {:?}", e),
+                    )
+                })?;
             let mut enc = write_buf.take_read_buffer();
             let mut enc = Vec::from(enc.take_remaining());
 
@@ -152,7 +174,7 @@ impl AesMmapDirectory {
 
             match res {
                 BufferResult::BufferUnderflow => break,
-                _ => panic!("Couldn't encrypt thing")
+                _ => panic!("Couldn't encrypt the store key"),
             }
         }
         key_file.write_all(&encrypted_key)?;
@@ -160,18 +182,21 @@ impl AesMmapDirectory {
         Ok(store_key)
     }
 
-    fn generate_iv() -> Vec<u8> {
+    fn generate_iv() -> Result<Vec<u8>, OpenDirectoryError> {
         let mut iv = vec![0u8; KEY_SIZE];
         let mut rng = thread_rng();
-        rng.try_fill(&mut iv[..]).unwrap();
-        iv
+        rng.try_fill(&mut iv[..])
+            .map_err(|e| IoError::new(ErrorKind::Other, format!("error generating iv: {:?}", e)))?;
+        Ok(iv)
     }
 
-    fn generate_key() -> Vec<u8> {
+    fn generate_key() -> Result<Vec<u8>, OpenDirectoryError> {
         let mut key = vec![0u8; KEY_SIZE];
         let mut rng = thread_rng();
-        rng.try_fill(&mut key[..]).unwrap();
-        key
+        rng.try_fill(&mut key[..]).map_err(|e| {
+            IoError::new(ErrorKind::Other, format!("error generating key: {:?}", e))
+        })?;
+        Ok(key)
     }
 
     fn rederive_key(passphrase: &str, salt: &[u8]) -> Vec<u8> {
@@ -182,15 +207,19 @@ impl AesMmapDirectory {
         key
     }
 
-    fn derive_key(passphrase: &str) -> (Vec<u8>, Vec<u8>) {
+    fn derive_key(passphrase: &str) -> Result<(Vec<u8>, Vec<u8>), OpenDirectoryError> {
         let mut rng = thread_rng();
         let mut salt = vec![0u8; SALT_SIZE];
-        rng.try_fill(&mut salt[..]).unwrap();
+        rng.try_fill(&mut salt[..]).map_err(|e| {
+            IoError::new(ErrorKind::Other, format!("error generating salt: {:?}", e))
+        })?;
+
         let mut mac = Hmac::new(Sha256::new(), passphrase.as_bytes());
         let mut key = vec![0u8; KEY_SIZE];
 
         pbkdf2(&mut mac, &salt, KEY_SIZE as u32, &mut key);
-        (key, salt)
+
+        Ok((key, salt))
     }
 }
 
@@ -218,7 +247,7 @@ impl Directory for AesMmapDirectory {
     fn open_write(&mut self, path: &Path) -> Result<WritePtr, OpenWriteError> {
         let file = match self.mmap_dir.open_write(path)?.into_inner() {
             Ok(f) => f,
-            Err(e) => panic!(e.to_string())
+            Err(e) => panic!(e.to_string()),
         };
 
         let encryptor = AesSafe128Encryptor::new(self.passphrase.as_bytes());
@@ -267,6 +296,9 @@ fn create_new_store_and_reopen() {
 
     let dir = AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
     drop(dir);
-    let dir = AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
+    let dir =
+        AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
     drop(dir);
+    let dir = AesMmapDirectory::open(tmpdir.path(), "password");
+    assert!(dir.is_err(), "Opened an existing store with the wrong passphrase");
 }
