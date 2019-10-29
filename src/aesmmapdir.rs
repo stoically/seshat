@@ -12,6 +12,7 @@ use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, Wr
 use crypto::hmac::Hmac;
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::Sha256;
+use crypto::mac::{Mac, MacResult};
 
 use aesstream::{AesReader, AesWriter};
 
@@ -26,9 +27,11 @@ use tantivy::directory::{
 
 pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write>(AesWriter<E, W>);
 
-const KEYFILE: &str = "seshat.key";
-const SALT_SIZE: usize = 15;
+const KEYFILE: &str = "seshat_index.key";
+const SALT_SIZE: usize = 16;
 const KEY_SIZE: usize = 16;
+const MAC_LENGTH: usize = 32;
+const VERSION: u8 = 1;
 
 impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Write for AesFile<E, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -84,8 +87,6 @@ impl AesMmapDirectory {
             }
         };
 
-        println!("HELLO KEY {:?}", store_key);
-
         Ok(AesMmapDirectory {
             mmap_dir,
             passphrase: passphrase.to_string(),
@@ -95,18 +96,42 @@ impl AesMmapDirectory {
     fn load_store_key(mut key_file: File, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
         let mut iv = [0u8; KEY_SIZE];
         let mut salt = [0u8; SALT_SIZE];
+        let mut expected_mac = [0u8; MAC_LENGTH];
+        let mut version = [0u8; 1];
         let mut encrypted_key = vec![];
 
+        // Read our iv, salt and encrypted key from our key file.
+        key_file.read_exact(&mut version)?;
         key_file.read_exact(&mut iv)?;
         key_file.read_exact(&mut salt)?;
+        key_file.read_exact(&mut expected_mac)?;
         key_file.read_to_end(&mut encrypted_key)?;
 
+
+        let expected_mac = MacResult::new(&expected_mac);
+
+        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
+        hmac.input(&encrypted_key);
+        let mac = hmac.result();
+
+        if version[0] != 1 {
+            return Err(IoError::new(ErrorKind::Other, "invalid index store version").into())
+        }
+
+        if mac != expected_mac {
+            return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into())
+        }
+
+        assert!(mac == expected_mac, "Mac are differing");
+
+        // Rederive our key using the passphrase and salt.
         let derived_key = AesMmapDirectory::rederive_key(passphrase, &salt);
         let mut decryptor = cbc_decryptor(KeySize::KeySize128, &derived_key, &iv, PkcsPadding);
         let mut out = [0u8; KEY_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
 
         let remaining;
+        // Decrypt the encrypted key and return it.
         let res;
         {
             let mut read_buf = RefReadBuffer::new(&encrypted_key);
@@ -153,11 +178,14 @@ impl AesMmapDirectory {
         let mut encrypted_key = Vec::new();
 
         let mut key_file = File::create(key_path)?;
-        // Wrtie down our public salt and iv first, those will be needed to
+
+        // Write down our public salt and iv first, those will be needed to
         // decrypt the key again.
+        key_file.write_all(&[VERSION])?;
         key_file.write_all(&iv)?;
         key_file.write_all(&salt)?;
 
+        // Encrypt our key.
         loop {
             let res = encryptor
                 .encrypt(&mut read_buf, &mut write_buf, true)
@@ -177,6 +205,14 @@ impl AesMmapDirectory {
                 _ => panic!("Couldn't encrypt the store key"),
             }
         }
+
+        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
+        hmac.input(&encrypted_key);
+        let result = hmac.result();
+
+        key_file.write_all(result.code())?;
+
+        // Write down the encrypted key.
         key_file.write_all(&encrypted_key)?;
 
         Ok(store_key)
