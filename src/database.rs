@@ -206,7 +206,7 @@ impl Database {
 
         let version = match Database::get_version(&connection) {
             Ok(v) => v,
-            Err(e) => return Err(Error::DatabaseOpenError(e.to_string()))
+            Err(e) => return Err(Error::DatabaseOpenError(e.to_string())),
         };
 
         if version != DATABASE_VERSION {
@@ -243,7 +243,9 @@ impl Database {
         let results = statement.query_map(NO_PARAMS, |row| row.get::<usize, String>(0))?;
 
         if results.count() != 1 {
-            return Err(Error::SqlCipherError("Sqlcipher support is missing".to_string()))
+            return Err(Error::SqlCipherError(
+                "Sqlcipher support is missing".to_string(),
+            ));
         }
 
         connection.pragma_update(None, "key", &passphrase as &dyn ToSql)?;
@@ -437,10 +439,9 @@ impl Database {
         )?;
 
         let version: i64 =
-            connection
-                .query_row("SELECT version FROM seshat_version", NO_PARAMS, |row| {
-                    row.get(0)
-                })?;
+            connection.query_row("SELECT version FROM seshat_version", NO_PARAMS, |row| {
+                row.get(0)
+            })?;
 
         // Do database migrations here before bumping the database version.
 
@@ -1155,10 +1156,13 @@ fn encrypted_db() {
 
     let connection = match db.get_connection() {
         Ok(c) => c,
-        Err(e) => panic!("Could not get database connection {}", e)
+        Err(e) => panic!("Could not get database connection {}", e),
     };
 
-    assert!(connection.is_empty().unwrap(), "New database should be empty");
+    assert!(
+        connection.is_empty().unwrap(),
+        "New database should be empty"
+    );
 
     let profile = Profile::new("Alice", "");
     db.add_event(EVENT.clone(), profile.clone());
@@ -1167,7 +1171,10 @@ fn encrypted_db() {
         Ok(_) => (),
         Err(e) => panic!("Could not commit events to database {}", e),
     }
-    assert!(!connection.is_empty().unwrap(), "Database shouldn't be empty anymore");
+    assert!(
+        !connection.is_empty().unwrap(),
+        "Database shouldn't be empty anymore"
+    );
 
     drop(db);
 

@@ -20,13 +20,13 @@
 #[macro_use]
 extern crate lazy_static;
 
+mod aesmmapdir;
 mod config;
 mod database;
 mod error;
 mod events;
 mod index;
 mod japanese_tokenizer;
-mod aesmmapdir;
 
 pub use database::{Connection, Database, SearchResult, Searcher};
 
