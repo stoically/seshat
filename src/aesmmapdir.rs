@@ -74,6 +74,9 @@ impl AesMmapDirectory {
         let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
 
         // TODO make sure to check the password length.
+        if passphrase.is_empty() {
+            return Err(IoError::new(ErrorKind::Other, "empty passphrase").into())
+        }
 
         let key_file = File::open(&key_path);
 
@@ -336,5 +339,12 @@ fn create_new_store_and_reopen() {
         AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
     drop(dir);
     let dir = AesMmapDirectory::open(tmpdir.path(), "password");
+    assert!(dir.is_err(), "Opened an existing store with the wrong passphrase");
+}
+
+#[test]
+fn create_store_with_empty_passphrase() {
+    let tmpdir = tempdir().unwrap();
+    let dir = AesMmapDirectory::open(tmpdir.path(), "");
     assert!(dir.is_err(), "Opened an existing store with the wrong passphrase");
 }
