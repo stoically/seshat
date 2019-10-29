@@ -16,9 +16,9 @@ use std::path::Path;
 use tantivy as tv;
 use tantivy::tokenizer::Tokenizer;
 
+use crate::aesmmapdir::AesMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
 use crate::types::{Event, EventId, EventType, Language, SearchConfig};
-use crate::aesmmapdir::AesMmapDirectory;
 
 #[cfg(test)]
 use tempfile::TempDir;
