@@ -10,9 +10,9 @@ use crypto::aessafe::{AesSafe128Decryptor, AesSafe128Encryptor};
 use crypto::blockmodes::PkcsPadding;
 use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
 use crypto::hmac::Hmac;
+use crypto::mac::{Mac, MacResult};
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::Sha256;
-use crypto::mac::{Mac, MacResult};
 
 use aesstream::{AesReader, AesWriter};
 
@@ -32,6 +32,7 @@ const SALT_SIZE: usize = 16;
 const KEY_SIZE: usize = 16;
 const MAC_LENGTH: usize = 32;
 const VERSION: u8 = 1;
+const PBKDF_COUNT: u32 = 1000;
 
 impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Write for AesFile<E, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
@@ -74,7 +75,7 @@ impl AesMmapDirectory {
         let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
 
         if passphrase.is_empty() {
-            return Err(IoError::new(ErrorKind::Other, "empty passphrase").into())
+            return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
         }
 
         let key_file = File::open(&key_path);
@@ -109,22 +110,22 @@ impl AesMmapDirectory {
         key_file.read_exact(&mut expected_mac)?;
         key_file.read_to_end(&mut encrypted_key)?;
 
-        let expected_mac = MacResult::new(&expected_mac);
-        let mac = AesMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, passphrase);
-
         if version[0] != VERSION {
-            return Err(IoError::new(ErrorKind::Other, "invalid index store version").into())
+            return Err(IoError::new(ErrorKind::Other, "invalid index store version").into());
         }
-
-        if mac != expected_mac {
-            return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into())
-        }
-
-        assert!(mac == expected_mac, "Mac are differing");
 
         // Rederive our key using the passphrase and salt.
-        let derived_key = AesMmapDirectory::rederive_key(passphrase, &salt);
-        let mut decryptor = cbc_decryptor(KeySize::KeySize128, &derived_key, &iv, PkcsPadding);
+        let (key, hmac_key) = AesMmapDirectory::rederive_key(passphrase, &salt);
+
+        let expected_mac = MacResult::new(&expected_mac);
+        let mac =
+            AesMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, &hmac_key);
+
+        if mac != expected_mac {
+            return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into());
+        }
+
+        let mut decryptor = cbc_decryptor(KeySize::KeySize128, &key, &iv, PkcsPadding);
         let mut out = [0u8; KEY_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
 
@@ -157,9 +158,15 @@ impl AesMmapDirectory {
         Ok(out.to_vec())
     }
 
-    fn calculate_hmac(version: u8, iv: &[u8], salt: &[u8], encrypted_key: &[u8], passphrase: &str) -> MacResult {
+    fn calculate_hmac(
+        version: u8,
+        iv: &[u8],
+        salt: &[u8],
+        encrypted_key: &[u8],
+        key: &[u8],
+    ) -> MacResult {
         // TODO use a better key here.
-        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
+        let mut hmac = Hmac::new(Sha256::new(), key);
         hmac.input(&[version]);
         hmac.input(&iv);
         hmac.input(&salt);
@@ -170,7 +177,7 @@ impl AesMmapDirectory {
     fn create_new_store(key_path: &Path, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
-        let (derived_key, salt) = AesMmapDirectory::derive_key(passphrase)?;
+        let (key, hmac_key, salt) = AesMmapDirectory::derive_key(passphrase)?;
 
         // Generate a random initialization vector for our AES encryptor.
         let iv = AesMmapDirectory::generate_iv()?;
@@ -178,7 +185,7 @@ impl AesMmapDirectory {
         // indexing files. The key itself is stored encrypted using the derived
         // key.
         let store_key = AesMmapDirectory::generate_key()?;
-        let mut encryptor = cbc_encryptor(KeySize::KeySize128, &derived_key, &iv, PkcsPadding);
+        let mut encryptor = cbc_encryptor(KeySize::KeySize128, &key, &iv, PkcsPadding);
 
         let mut read_buf = RefReadBuffer::new(&store_key);
         let mut out = [0u8; 1024];
@@ -214,7 +221,7 @@ impl AesMmapDirectory {
             }
         }
 
-        let mac = AesMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, passphrase);
+        let mac = AesMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
         key_file.write_all(mac.code())?;
 
         // Write down the encrypted key.
@@ -240,27 +247,24 @@ impl AesMmapDirectory {
         Ok(key)
     }
 
-    fn rederive_key(passphrase: &str, salt: &[u8]) -> Vec<u8> {
+    fn rederive_key(passphrase: &str, salt: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let mut mac = Hmac::new(Sha256::new(), passphrase.as_bytes());
-        let mut key = vec![0u8; KEY_SIZE];
+        let mut pbkdf_result = [0u8; KEY_SIZE * 2];
 
-        pbkdf2(&mut mac, &salt, KEY_SIZE as u32, &mut key);
-        key
+        pbkdf2(&mut mac, &salt, PBKDF_COUNT, &mut pbkdf_result);
+        let (key, hmac_key) = pbkdf_result.split_at(KEY_SIZE);
+        (Vec::from(key), Vec::from(hmac_key))
     }
 
-    fn derive_key(passphrase: &str) -> Result<(Vec<u8>, Vec<u8>), OpenDirectoryError> {
+    fn derive_key(passphrase: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), OpenDirectoryError> {
         let mut rng = thread_rng();
         let mut salt = vec![0u8; SALT_SIZE];
         rng.try_fill(&mut salt[..]).map_err(|e| {
             IoError::new(ErrorKind::Other, format!("error generating salt: {:?}", e))
         })?;
 
-        let mut mac = Hmac::new(Sha256::new(), passphrase.as_bytes());
-        let mut key = vec![0u8; KEY_SIZE];
-
-        pbkdf2(&mut mac, &salt, KEY_SIZE as u32, &mut key);
-
-        Ok((key, salt))
+        let (key, hmac_key) = AesMmapDirectory::rederive_key(passphrase, &salt);
+        Ok((key, hmac_key, salt))
     }
 }
 
@@ -340,12 +344,18 @@ fn create_new_store_and_reopen() {
         AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
     drop(dir);
     let dir = AesMmapDirectory::open(tmpdir.path(), "password");
-    assert!(dir.is_err(), "Opened an existing store with the wrong passphrase");
+    assert!(
+        dir.is_err(),
+        "Opened an existing store with the wrong passphrase"
+    );
 }
 
 #[test]
 fn create_store_with_empty_passphrase() {
     let tmpdir = tempdir().unwrap();
     let dir = AesMmapDirectory::open(tmpdir.path(), "");
-    assert!(dir.is_err(), "Opened an existing store with the wrong passphrase");
+    assert!(
+        dir.is_err(),
+        "Opened an existing store with the wrong passphrase"
+    );
 }
