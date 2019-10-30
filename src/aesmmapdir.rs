@@ -73,7 +73,6 @@ impl AesMmapDirectory {
         let key_path = path.as_ref().join(KEYFILE);
         let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
 
-        // TODO make sure to check the password length.
         if passphrase.is_empty() {
             return Err(IoError::new(ErrorKind::Other, "empty passphrase").into())
         }
@@ -110,14 +109,10 @@ impl AesMmapDirectory {
         key_file.read_exact(&mut expected_mac)?;
         key_file.read_to_end(&mut encrypted_key)?;
 
-
         let expected_mac = MacResult::new(&expected_mac);
+        let mac = AesMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, passphrase);
 
-        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
-        hmac.input(&encrypted_key);
-        let mac = hmac.result();
-
-        if version[0] != 1 {
+        if version[0] != VERSION {
             return Err(IoError::new(ErrorKind::Other, "invalid index store version").into())
         }
 
@@ -160,6 +155,16 @@ impl AesMmapDirectory {
         }
 
         Ok(out.to_vec())
+    }
+
+    fn calculate_hmac(version: u8, iv: &[u8], salt: &[u8], encrypted_key: &[u8], passphrase: &str) -> MacResult {
+        // TODO use a better key here.
+        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
+        hmac.input(&[version]);
+        hmac.input(&iv);
+        hmac.input(&salt);
+        hmac.input(&encrypted_key);
+        hmac.result()
     }
 
     fn create_new_store(key_path: &Path, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
@@ -209,11 +214,8 @@ impl AesMmapDirectory {
             }
         }
 
-        let mut hmac = Hmac::new(Sha256::new(), passphrase.as_bytes());
-        hmac.input(&encrypted_key);
-        let result = hmac.result();
-
-        key_file.write_all(result.code())?;
+        let mac = AesMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, passphrase);
+        key_file.write_all(mac.code())?;
 
         // Write down the encrypted key.
         key_file.write_all(&encrypted_key)?;
@@ -332,7 +334,6 @@ use tempfile::tempdir;
 #[test]
 fn create_new_store_and_reopen() {
     let tmpdir = tempdir().unwrap();
-
     let dir = AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
     drop(dir);
     let dir =
