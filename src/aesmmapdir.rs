@@ -14,7 +14,7 @@ use crypto::mac::{Mac, MacResult};
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::Sha256;
 
-use aesstream::{AesReader, AesWriter};
+use crate::aesstream::{AesReader, AesWriter};
 
 use tantivy::directory::error::{
     DeleteError, LockError, OpenDirectoryError, OpenReadError, OpenWriteError,
