@@ -21,6 +21,7 @@
 extern crate lazy_static;
 
 mod aesmmapdir;
+mod aesstream;
 mod config;
 mod database;
 mod error;
