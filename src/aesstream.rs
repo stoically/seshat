@@ -255,25 +255,6 @@ impl<D: BlockEncryptor, R: Read> AesReader<D, R>
 
 }
 
-// impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
-//     /// Seeks to *offset* from the start of the file
-//     fn seek_from_start(&mut self, offset: u64) -> Result<u64> {
-//         let block_num = offset / self.block_size as u64;
-//         let block_offset = offset % self.block_size as u64;
-//         // reset CbcDecryptor
-//         self.reader.seek(SeekFrom::Start((block_num - 1) * self.block_size as u64))?;
-//         let mut iv = vec![0u8; self.block_size];
-//         self.reader.read_exact(&mut iv)?;
-//         self.dec.reset(&iv);
-//         self.buffer = Vec::new();
-//         self.eof = false;
-//         let mut skip = vec![0u8; block_offset as usize];
-//         self.read_exact(&mut skip)?;
-//         // subtract IV
-//         Ok(offset - 16)
-//     }
-// }
-
 impl<D: BlockEncryptor, R: Read> Read for AesReader<D, R> {
     /// Reads encrypted data from the underlying reader, decrypts it and writes the result into the
     /// passed buffer.
@@ -283,28 +264,8 @@ impl<D: BlockEncryptor, R: Read> Read for AesReader<D, R> {
     }
 }
 
-//impl<D: BlockEncryptor, R: Read + Seek> Seek for AesReader<D, R> {
-//    /// Seek to an offset, in bytes, in a stream.
-//    /// [Read more](https://doc.rust-lang.org/nightly/std/io/trait.Seek.html#tymethod.seek)
-//    ///
-//    /// When seeking, this reader takes care of reinitializing the CbcDecryptor with the correct IV.
-//    /// The passed position does *not* need to be aligned to the blocksize.
-//    fn seek(&mut self, pos: SeekFrom) -> Result<u64> {
-//        match pos {
-//            SeekFrom::Start(offset) => {
-//                // +16 because first block is the iv
-//                self.seek_from_start(offset + 16)
-//            },
-//            SeekFrom::End(_) | SeekFrom::Current(_) => {
-//                let pos = self.reader.seek(pos)?;
-//                self.seek_from_start(pos)
-//            },
-//        }
-//    }
-//}
-
 #[cfg(test)]
-use crypto::aessafe::{AesSafe128Decryptor, AesSafe128Encryptor};
+use crypto::aessafe::{AesSafe128Encryptor};
 
 #[cfg(test)]
 use std::io::Cursor;
@@ -423,75 +384,3 @@ fn dec_read_unaligned() {
     }
     assert_eq!(dec, &orig);
 }
-
-// #[test]
-// fn dec_seek_start() {
-//     let mut orig = Vec::new();
-//     orig.extend(std::iter::repeat(()).take(128).enumerate().map(|(i, ())| i as u8));
-//     let enc = encrypt(&orig);
-
-//     let key = [0u8; 16];
-//     let block_dec = AesSafe128Encryptor::new(&key);
-//     let mut aes = AesReader::new(Cursor::new(&enc), block_dec).unwrap();
-//     let mut dec = [255u8; 16];
-//     for i in 0..112 {
-//         aes.seek(SeekFrom::Start(i as u64)).unwrap();
-//         aes.read_exact(&mut dec).unwrap();
-//         assert_eq!(dec, &orig[i..i+16]);
-//     }
-// }
-
-// #[test]
-// fn dec_seek_current() {
-//     let mut orig = Vec::new();
-//     orig.extend(std::iter::repeat(()).take(128).enumerate().map(|(i, ())| i as u8));
-//     let enc = encrypt(&orig);
-
-//     let key = [0u8; 16];
-//     let block_dec = AesSafe128Encryptor::new(&key);
-//     let mut aes = AesReader::new(Cursor::new(&enc), block_dec).unwrap();
-//     let mut dec = [255u8; 16];
-//     aes.seek(SeekFrom::Start(0)).unwrap();
-//     for i in 0..112 {
-//         let pos = aes.seek(SeekFrom::Current(0)).unwrap();
-//         aes.seek(SeekFrom::Current(i as i64 - pos as i64)).unwrap();
-//         aes.read_exact(&mut dec).unwrap();
-//         assert_eq!(dec, &orig[i..i+16]);
-//     }
-// }
-
-// #[test]
-// fn dec_seek_end() {
-//     let mut orig = Vec::new();
-//     orig.extend(std::iter::repeat(()).take(127).enumerate().map(|(i, ())| i as u8));
-//     let enc = encrypt(&orig);
-
-//     let key = [0u8; 16];
-//     let block_dec = AesSafe128Encryptor::new(&key);
-//     let mut aes = AesReader::new(Cursor::new(&enc), block_dec).unwrap();
-//     let mut dec = [255u8; 16];
-//     for i in 1..113 {
-//         aes.seek(SeekFrom::End(-(i as i64)-16)).unwrap();
-//         aes.read_exact(&mut dec).unwrap();
-//         assert_eq!(dec, &orig[(112-i)..(112-i+16)]);
-//     }
-// }
-
-// #[test]
-// fn dec_seek_current_backwards() {
-//     let mut orig = Vec::new();
-//     orig.extend(std::iter::repeat(()).take(128).enumerate().map(|(i, ())| i as u8));
-//     let enc = encrypt(&orig);
-
-//     let key = [0u8; 16];
-//     let block_dec = AesSafe128Encryptor::new(&key);
-//     let mut aes = AesReader::new(Cursor::new(&enc), block_dec).unwrap();
-//     let mut dec = [255u8; 16];
-//     aes.seek(SeekFrom::Start(0)).unwrap();
-//     for i in (0..112).rev() {
-//         let pos = aes.seek(SeekFrom::Current(0)).unwrap();
-//         aes.seek(SeekFrom::Current(i as i64 - pos as i64)).unwrap();
-//         aes.read_exact(&mut dec).unwrap();
-//         assert_eq!(dec, &orig[i..i+16]);
-//     }
-// }
