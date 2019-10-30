@@ -5,14 +5,14 @@ use std::io::{BufWriter, Cursor, ErrorKind, Read, Write};
 use std::ops::Deref;
 use std::path::Path;
 
-use crypto::aes::{cbc_decryptor, cbc_encryptor, KeySize};
-use crypto::aessafe::{AesSafe128Encryptor};
-use crypto::blockmodes::PkcsPadding;
+use crypto::aessafe::AesSafe256Encryptor;
+use crypto::blockmodes::CtrMode;
 use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
 use crypto::hmac::Hmac;
 use crypto::mac::{Mac, MacResult};
 use crypto::pbkdf2::pbkdf2;
-use crypto::sha2::Sha256;
+use crypto::sha2::{Sha256, Sha512};
+use crypto::symmetriccipher::{Decryptor, Encryptor};
 
 use crate::aesstream::{AesReader, AesWriter};
 
@@ -29,7 +29,8 @@ pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write>(AesWrit
 
 const KEYFILE: &str = "seshat_index.key";
 const SALT_SIZE: usize = 16;
-const KEY_SIZE: usize = 16;
+const IV_SIZE: usize = 16;
+const KEY_SIZE: usize = 32;
 const MAC_LENGTH: usize = 32;
 const VERSION: u8 = 1;
 const PBKDF_COUNT: u32 = 1000;
@@ -91,7 +92,7 @@ impl AesMmapDirectory {
     }
 
     fn load_store_key(mut key_file: File, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
-        let mut iv = [0u8; KEY_SIZE];
+        let mut iv = [0u8; IV_SIZE];
         let mut salt = [0u8; SALT_SIZE];
         let mut expected_mac = [0u8; MAC_LENGTH];
         let mut version = [0u8; 1];
@@ -119,7 +120,10 @@ impl AesMmapDirectory {
             return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into());
         }
 
-        let mut decryptor = cbc_decryptor(KeySize::KeySize128, &key, &iv, PkcsPadding);
+        // let algorithm = AesSafe128Encryptor::new(&key);
+        let algorithm = AesSafe256Encryptor::new(&key);
+        let mut decryptor = CtrMode::new(algorithm, iv.to_vec());
+
         let mut out = [0u8; KEY_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
 
@@ -179,7 +183,9 @@ impl AesMmapDirectory {
         // indexing files. The key itself is stored encrypted using the derived
         // key.
         let store_key = AesMmapDirectory::generate_key()?;
-        let mut encryptor = cbc_encryptor(KeySize::KeySize128, &key, &iv, PkcsPadding);
+        // let algorithm = AesSafe128Encryptor::new(&key);
+        let algorithm = AesSafe256Encryptor::new(&key);
+        let mut encryptor = CtrMode::new(algorithm, iv.clone());
 
         let mut read_buf = RefReadBuffer::new(&store_key);
         let mut out = [0u8; 1024];
@@ -225,7 +231,7 @@ impl AesMmapDirectory {
     }
 
     fn generate_iv() -> Result<Vec<u8>, OpenDirectoryError> {
-        let mut iv = vec![0u8; KEY_SIZE];
+        let mut iv = vec![0u8; IV_SIZE];
         let mut rng = thread_rng();
         rng.try_fill(&mut iv[..])
             .map_err(|e| IoError::new(ErrorKind::Other, format!("error generating iv: {:?}", e)))?;
@@ -242,7 +248,7 @@ impl AesMmapDirectory {
     }
 
     fn rederive_key(passphrase: &str, salt: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let mut mac = Hmac::new(Sha256::new(), passphrase.as_bytes());
+        let mut mac = Hmac::new(Sha512::new(), passphrase.as_bytes());
         let mut pbkdf_result = [0u8; KEY_SIZE * 2];
 
         pbkdf2(&mut mac, &salt, PBKDF_COUNT, &mut pbkdf_result);
@@ -266,7 +272,7 @@ impl Directory for AesMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
 
-        let decryptor = AesSafe128Encryptor::new(&self.store_key);
+        let decryptor = AesSafe256Encryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
@@ -289,7 +295,7 @@ impl Directory for AesMmapDirectory {
             Err(e) => panic!(e.to_string()),
         };
 
-        let encryptor = AesSafe128Encryptor::new(&self.store_key);
+        let encryptor = AesSafe256Encryptor::new(&self.store_key);
         let writer = AesWriter::new(file, encryptor).unwrap();
         let file = AesFile(writer);
         Ok(BufWriter::new(Box::new(file)))
@@ -298,7 +304,7 @@ impl Directory for AesMmapDirectory {
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
         let data = self.mmap_dir.atomic_read(path)?;
 
-        let decryptor = AesSafe128Encryptor::new(&self.store_key);
+        let decryptor = AesSafe256Encryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(data), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
@@ -307,7 +313,7 @@ impl Directory for AesMmapDirectory {
     }
 
     fn atomic_write(&mut self, path: &Path, data: &[u8]) -> std::io::Result<()> {
-        let encryptor = AesSafe128Encryptor::new(&self.store_key);
+        let encryptor = AesSafe256Encryptor::new(&self.store_key);
         let mut encrypted = Vec::new();
         {
             let mut writer = AesWriter::new(&mut encrypted, encryptor)?;
