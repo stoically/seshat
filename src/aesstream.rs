@@ -24,10 +24,10 @@
 
 //! Read/Write Wrapper for AES Encryption and Decryption during I/O Operations
 //!
-use std::io::{Read, Write, Seek, SeekFrom, Result, Error, ErrorKind};
+use std::io::{Read, Write, Result, Error, ErrorKind};
 
-use crypto::symmetriccipher::{BlockDecryptor, BlockEncryptor, Encryptor, Decryptor};
-use crypto::blockmodes::{PkcsPadding, CtrMode, CbcEncryptor, CbcDecryptor, EncPadding, DecPadding};
+use crypto::symmetriccipher::{BlockEncryptor, Encryptor, Decryptor};
+use crypto::blockmodes::CtrMode;
 use crypto::buffer::{RefReadBuffer, RefWriteBuffer, BufferResult, WriteBuffer, ReadBuffer};
 use rand::{thread_rng, Rng};
 
@@ -93,7 +93,6 @@ impl<E: BlockEncryptor, W: Write> AesWriter<E, W> {
                 BufferResult::BufferOverflow => {},
             }
         }
-        // CbcEncryptor has its own internal buffer and always consumes all input
         assert_eq!(read_buf.remaining(), 0);
         Ok(buf.len())
     }
@@ -101,12 +100,6 @@ impl<E: BlockEncryptor, W: Write> AesWriter<E, W> {
 
 impl<E: BlockEncryptor, W: Write> Write for AesWriter<E, W> {
     /// Encrypts the passed buffer and writes the result to the underlying writer.
-    ///
-    /// Due to the blocksize of CBC not all data will be written instantaneously.
-    /// For example if 17 bytes are passed, the first 16 will be encrypted as one block and written
-    /// the underlying writer, but the last byte won't be encrypted and written yet.
-    ///
-    /// If [`flush`](#method.flush) has been called, this method will always return an error.
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         let written = self.encrypt_write(buf, false)?;
         Ok(written)
@@ -114,10 +107,6 @@ impl<E: BlockEncryptor, W: Write> Write for AesWriter<E, W> {
 
     /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
     /// [Read more](https://doc.rust-lang.org/nightly/std/io/trait.Write.html#tymethod.flush)
-    ///
-    /// **Warning**: When this method is called, the encryption will finish and insert final padding.
-    /// After calling `flush`, this writer cannot be written to anymore and will always return an
-    /// error.
     fn flush(&mut self) -> Result<()> {
         self.writer.as_mut().unwrap().flush()
     }
@@ -136,10 +125,10 @@ impl<E: BlockEncryptor, W: Write> Drop for AesWriter<E, W> {
     }
 }
 
-/// Wraps a [`Read`](https://doc.rust-lang.org/std/io/trait.Read.html) implementation with CBC
-/// based on given [`BlockDecryptor`][bd]
+/// Wraps a [`Read`](https://doc.rust-lang.org/std/io/trait.Read.html) implementation with CTR
+/// based on given [`CtrMode`][ct]
 ///
-/// [bd]: https://docs.rs/rust-crypto/0.2.36/crypto/symmetriccipher/trait.BlockDecryptor.html
+/// [ct]: https://docs.rs/rust-crypto/0.2.36/crypto/blockmodes/struct.CtrMode.html
 pub struct AesReader<D: BlockEncryptor, R: Read>
 {
     /// Reader to read encrypted data from
@@ -185,15 +174,6 @@ impl<D: BlockEncryptor, R: Read> AesReader<D, R>
     }
 
     /// Reads and decrypts data from the underlying stream and writes it into the passed buffer.
-    ///
-    /// The CbcDecryptor has an internal output buffer, but not an input buffer.
-    /// Therefore, we need to take care of letfover input.
-    /// Additionally, we need to handle eof correctly, as CbcDecryptor needs to correctly interpret
-    /// padding.
-    /// Thus, we need to read 2 buffers. The first one is read as input for decryption and the second
-    /// one to determine if eof is reached.
-    /// The next time this function is called, the second buffer is passed as input into decryption
-    /// and the first buffer is filled to find out if we reached eof.
     ///
     /// # Parameters
     ///
