@@ -24,11 +24,11 @@
 
 //! Read/Write Wrapper for AES Encryption and Decryption during I/O Operations
 //!
-use std::io::{Read, Write, Result, Error, ErrorKind};
+use std::io::{Error, ErrorKind, Read, Result, Write};
 
-use crypto::symmetriccipher::{BlockEncryptor, Encryptor, Decryptor};
 use crypto::blockmodes::CtrMode;
-use crypto::buffer::{RefReadBuffer, RefWriteBuffer, BufferResult, WriteBuffer, ReadBuffer};
+use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
+use crypto::symmetriccipher::{BlockEncryptor, Decryptor, Encryptor};
 use rand::{thread_rng, Rng};
 
 const BUFFER_SIZE: usize = 8192;
@@ -81,16 +81,19 @@ impl<E: BlockEncryptor, W: Write> AesWriter<E, W> {
         let mut out = [0u8; BUFFER_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
         loop {
-            let res = self.enc.encrypt(&mut read_buf, &mut write_buf, eof)
+            let res = self
+                .enc
+                .encrypt(&mut read_buf, &mut write_buf, eof)
                 .map_err(|e| Error::new(ErrorKind::Other, format!("encryption error: {:?}", e)))?;
             let mut enc = write_buf.take_read_buffer();
             let enc = enc.take_remaining();
             self.writer.as_mut().unwrap().write_all(enc)?;
             match res {
                 BufferResult::BufferUnderflow => break,
-                BufferResult::BufferOverflow if eof =>
-                    panic!("read_buf underflow during encryption with eof"),
-                BufferResult::BufferOverflow => {},
+                BufferResult::BufferOverflow if eof => {
+                    panic!("read_buf underflow during encryption with eof")
+                }
+                BufferResult::BufferOverflow => {}
             }
         }
         assert_eq!(read_buf.remaining(), 0);
@@ -129,8 +132,7 @@ impl<E: BlockEncryptor, W: Write> Drop for AesWriter<E, W> {
 /// based on given [`CtrMode`][ct]
 ///
 /// [ct]: https://docs.rs/rust-crypto/0.2.36/crypto/blockmodes/struct.CtrMode.html
-pub struct AesReader<D: BlockEncryptor, R: Read>
-{
+pub struct AesReader<D: BlockEncryptor, R: Read> {
     /// Reader to read encrypted data from
     reader: R,
     /// Decryptor to decrypt data with
@@ -141,8 +143,7 @@ pub struct AesReader<D: BlockEncryptor, R: Read>
     eof: bool,
 }
 
-impl<D: BlockEncryptor, R: Read> AesReader<D, R>
-{
+impl<D: BlockEncryptor, R: Read> AesReader<D, R> {
     /// Creates a new AesReader.
     ///
     /// Assumes that the first block of given reader is the IV.
@@ -192,7 +193,9 @@ impl<D: BlockEncryptor, R: Read> AesReader<D, R>
             let mut read_buf = RefReadBuffer::new(&self.buffer);
 
             // test if CbcDecryptor still has enough decrypted data or we have enough buffered
-            res = self.dec.decrypt(&mut read_buf, &mut write_buf, self.eof)
+            res = self
+                .dec
+                .decrypt(&mut read_buf, &mut write_buf, self.eof)
                 .map_err(|e| Error::new(ErrorKind::Other, format!("decryption error: {:?}", e)))?;
             remaining = read_buf.remaining();
         }
@@ -217,8 +220,11 @@ impl<D: BlockEncryptor, R: Read> AesReader<D, R>
             let remaining;
             {
                 let mut read_buf = RefReadBuffer::new(&self.buffer);
-                self.dec.decrypt(&mut read_buf, &mut write_buf, self.eof)
-                    .map_err(|e| Error::new(ErrorKind::Other, format!("decryption error: {:?}", e)))?;
+                self.dec
+                    .decrypt(&mut read_buf, &mut write_buf, self.eof)
+                    .map_err(|e| {
+                        Error::new(ErrorKind::Other, format!("decryption error: {:?}", e))
+                    })?;
                 let mut dec = write_buf.take_read_buffer();
                 let dec = dec.take_remaining();
                 dec_len = dec.len();
@@ -232,7 +238,6 @@ impl<D: BlockEncryptor, R: Read> AesReader<D, R>
         }
         Ok(dec_len)
     }
-
 }
 
 impl<D: BlockEncryptor, R: Read> Read for AesReader<D, R> {
@@ -245,7 +250,7 @@ impl<D: BlockEncryptor, R: Read> Read for AesReader<D, R> {
 }
 
 #[cfg(test)]
-use crypto::aessafe::{AesSafe128Encryptor};
+use crypto::aessafe::AesSafe128Encryptor;
 
 #[cfg(test)]
 use std::io::Cursor;
@@ -282,7 +287,11 @@ struct UnalignedReader<'a> {
 #[cfg(test)]
 impl<'a> UnalignedReader<'a> {
     fn new(buf: &'a [u8], block_size: usize) -> UnalignedReader<'a> {
-        UnalignedReader { buf, block_size, written: 0 }
+        UnalignedReader {
+            buf,
+            block_size,
+            written: 0,
+        }
     }
 }
 
@@ -360,7 +369,9 @@ fn dec_read_unaligned() {
         let mut buf = [0u8; 3];
         let read = aes.read(&mut buf).unwrap();
         dec.extend(&buf[..read]);
-        if read == 0 { break; }
+        if read == 0 {
+            break;
+        }
     }
     assert_eq!(dec, &orig);
 }
