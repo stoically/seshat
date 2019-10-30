@@ -40,7 +40,7 @@ const BUFFER_SIZE: usize = 8192;
 ///
 pub struct AesWriter<E: BlockEncryptor, W: Write> {
     /// Writer to write encrypted data to
-    writer: Option<W>,
+    writer: W,
     /// Encryptor to encrypt data with
     enc: CtrMode<E>,
 }
@@ -64,7 +64,7 @@ impl<E: BlockEncryptor, W: Write> AesWriter<E, W> {
             .map_err(|e| Error::new(ErrorKind::Other, format!("error generating iv: {:?}", e)))?;
         writer.write_all(&iv)?;
         Ok(AesWriter {
-            writer: Some(writer),
+            writer,
             enc: CtrMode::new(enc, iv),
         })
     }
@@ -87,7 +87,7 @@ impl<E: BlockEncryptor, W: Write> AesWriter<E, W> {
                 .map_err(|e| Error::new(ErrorKind::Other, format!("encryption error: {:?}", e)))?;
             let mut enc = write_buf.take_read_buffer();
             let enc = enc.take_remaining();
-            self.writer.as_mut().unwrap().write_all(enc)?;
+            self.writer.write_all(enc)?;
             match res {
                 BufferResult::BufferUnderflow => break,
                 BufferResult::BufferOverflow if eof => {
@@ -111,19 +111,17 @@ impl<E: BlockEncryptor, W: Write> Write for AesWriter<E, W> {
     /// Flush this output stream, ensuring that all intermediately buffered contents reach their destination.
     /// [Read more](https://doc.rust-lang.org/nightly/std/io/trait.Write.html#tymethod.flush)
     fn flush(&mut self) -> Result<()> {
-        self.writer.as_mut().unwrap().flush()
+        self.writer.flush()
     }
 }
 
 impl<E: BlockEncryptor, W: Write> Drop for AesWriter<E, W> {
     /// Drops this AesWriter trying to finish encryption and to write everything to the underlying writer.
     fn drop(&mut self) {
-        if self.writer.is_some() {
-            if !std::thread::panicking() {
-                self.flush().unwrap();
-            } else {
-                let _ = self.flush();
-            }
+        if !std::thread::panicking() {
+            self.flush().unwrap();
+        } else {
+            let _ = self.flush();
         }
     }
 }
