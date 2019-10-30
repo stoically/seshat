@@ -272,7 +272,7 @@ impl Directory for AesMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
 
-        let decryptor = AesSafe128Decryptor::new(&self.store_key);
+        let decryptor = AesSafe128Encryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
@@ -304,7 +304,7 @@ impl Directory for AesMmapDirectory {
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
         let data = self.mmap_dir.atomic_read(path)?;
 
-        let decryptor = AesSafe128Decryptor::new(&self.store_key);
+        let decryptor = AesSafe128Encryptor::new(&self.store_key);
         let mut reader = AesReader::new(Cursor::new(data), decryptor).unwrap();
         let mut decrypted = Vec::new();
 
