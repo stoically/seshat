@@ -6,7 +6,7 @@ use std::ops::Deref;
 use std::path::Path;
 
 use crypto::aes::{cbc_decryptor, cbc_encryptor, KeySize};
-use crypto::aessafe::{AesSafe128Decryptor, AesSafe128Encryptor};
+use crypto::aessafe::{AesSafe128Encryptor};
 use crypto::blockmodes::PkcsPadding;
 use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
 use crypto::hmac::Hmac;
@@ -40,19 +40,13 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Write for AesFile<E, 
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Drop for AesFile<E, W> {
-    fn drop(&mut self) {
-        self.flush().expect("Cannot flush thing");
+        self.0.flush()
     }
 }
 
 impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> TerminatingWrite for AesFile<E, W> {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
-        Ok(())
+        self.0.flush()
     }
 }
 
