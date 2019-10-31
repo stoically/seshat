@@ -25,7 +25,9 @@ use tantivy::directory::{
     AntiCallToken, DirectoryLock, Lock, ReadOnlySource, TerminatingWrite, WatchCallback, WritePtr,
 };
 
-pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(AesWriter<E, M, W>);
+pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(
+    AesWriter<E, M, W>,
+);
 
 type KeyDerivationResult = (Vec<u8>, Vec<u8>, Vec<u8>);
 
@@ -47,7 +49,9 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Write for Aes
     }
 }
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite for AesFile<E, M, W> {
+impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
+    for AesFile<E, M, W>
+{
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
         self.0.flush()
     }
