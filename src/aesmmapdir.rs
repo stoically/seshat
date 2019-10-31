@@ -8,15 +8,16 @@ use std::path::Path;
 use crypto::aessafe::AesSafe256Encryptor;
 use crypto::blockmodes::CtrMode;
 use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
+use crypto::hkdf::hkdf_expand;
 use crypto::hmac::Hmac;
 use crypto::mac::{Mac, MacResult};
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::{Sha256, Sha512};
 use crypto::symmetriccipher::{Decryptor, Encryptor};
-use crypto::hkdf::hkdf_expand;
 
 use crate::aesstream::{AesReader, AesWriter};
 
+use tantivy::directory::error::IOError as TvIoError;
 use tantivy::directory::error::{
     DeleteError, LockError, OpenDirectoryError, OpenReadError, OpenWriteError,
 };
@@ -102,7 +103,7 @@ impl AesMmapDirectory {
         })
     }
 
-    fn expand_store_key(store_key: &[u8]) -> (Vec<u8>, Vec<u8>){
+    fn expand_store_key(store_key: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let mut hkdf_result = [0u8; KEY_SIZE * 2];
 
         hkdf_expand(Sha512::new(), &store_key, &[], &mut hkdf_result);
@@ -291,10 +292,13 @@ impl Directory for AesMmapDirectory {
 
         let decryptor = AesSafe256Encryptor::new(&self.encryption_key);
         let mac = Hmac::new(Sha256::new(), &self.mac_key);
-        let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor, mac).unwrap();
+        let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor, mac)
+            .map_err(TvIoError::from)?;
         let mut decrypted = Vec::new();
 
-        reader.read_to_end(&mut decrypted).unwrap();
+        reader
+            .read_to_end(&mut decrypted)
+            .map_err(TvIoError::from)?;
 
         Ok(ReadOnlySource::from(decrypted))
     }
@@ -315,7 +319,7 @@ impl Directory for AesMmapDirectory {
 
         let encryptor = AesSafe256Encryptor::new(&self.encryption_key);
         let mac = Hmac::new(Sha256::new(), &self.mac_key);
-        let writer = AesWriter::new(file, encryptor, mac).unwrap();
+        let writer = AesWriter::new(file, encryptor, mac).map_err(TvIoError::from)?;
         let file = AesFile(writer);
         Ok(BufWriter::new(Box::new(file)))
     }
@@ -325,10 +329,13 @@ impl Directory for AesMmapDirectory {
 
         let decryptor = AesSafe256Encryptor::new(&self.encryption_key);
         let mac = Hmac::new(Sha256::new(), &self.mac_key);
-        let mut reader = AesReader::new(Cursor::new(data), decryptor, mac).unwrap();
+        let mut reader =
+            AesReader::new(Cursor::new(data), decryptor, mac).map_err(TvIoError::from)?;
         let mut decrypted = Vec::new();
 
-        reader.read_to_end(&mut decrypted).unwrap();
+        reader
+            .read_to_end(&mut decrypted)
+            .map_err(TvIoError::from)?;
         Ok(decrypted)
     }
 
