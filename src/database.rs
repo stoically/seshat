@@ -251,7 +251,7 @@ impl Database {
     }
 
     fn create_index<P: AsRef<Path>>(path: &P, config: &Config) -> Result<Index> {
-        Ok(Index::new(path, &config.language)?)
+        Ok(Index::new(path, &config)?)
     }
 
     fn write_events_helper(
