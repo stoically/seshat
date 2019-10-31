@@ -18,7 +18,7 @@ use tantivy::tokenizer::Tokenizer;
 
 use crate::config::{Config, Language, SearchConfig};
 use crate::events::{Event, EventId, EventType};
-use crate::encrypteddir::AesMmapDirectory;
+use crate::encrypteddir::EncryptedMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
 
 // Tantivy requires at least 3MB per writer thread and will panic if we
@@ -170,7 +170,7 @@ impl Index {
 
         let index = match &config.passphrase {
             Some(p) => {
-                let dir = AesMmapDirectory::open(path, &p)?;
+                let dir = EncryptedMmapDirectory::open(path, &p)?;
                 tv::Index::open_or_create(dir, schema)?
             }
             None => {

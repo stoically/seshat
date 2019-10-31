@@ -67,13 +67,13 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for Aes
 }
 
 #[derive(Clone, Debug)]
-pub struct AesMmapDirectory {
+pub struct EncryptedMmapDirectory {
     mmap_dir: tantivy::directory::MmapDirectory,
     encryption_key: Vec<u8>,
     mac_key: Vec<u8>,
 }
 
-impl AesMmapDirectory {
+impl EncryptedMmapDirectory {
     pub fn open<P: AsRef<Path>>(path: P, passphrase: &str) -> Result<Self, OpenDirectoryError> {
         let key_path = path.as_ref().join(KEYFILE);
         let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
@@ -85,18 +85,18 @@ impl AesMmapDirectory {
         let key_file = File::open(&key_path);
 
         let store_key = match key_file {
-            Ok(k) => AesMmapDirectory::load_store_key(k, passphrase)?,
+            Ok(k) => EncryptedMmapDirectory::load_store_key(k, passphrase)?,
             Err(e) => {
                 if e.kind() != ErrorKind::NotFound {
                     return Err(e.into());
                 }
-                AesMmapDirectory::create_new_store(&key_path, passphrase)?
+                EncryptedMmapDirectory::create_new_store(&key_path, passphrase)?
             }
         };
 
-        let (encryption_key, mac_key) = AesMmapDirectory::expand_store_key(&store_key);
+        let (encryption_key, mac_key) = EncryptedMmapDirectory::expand_store_key(&store_key);
 
-        Ok(AesMmapDirectory {
+        Ok(EncryptedMmapDirectory {
             mmap_dir,
             encryption_key,
             mac_key,
@@ -130,11 +130,11 @@ impl AesMmapDirectory {
         }
 
         // Rederive our key using the passphrase and salt.
-        let (key, hmac_key) = AesMmapDirectory::rederive_key(passphrase, &salt);
+        let (key, hmac_key) = EncryptedMmapDirectory::rederive_key(passphrase, &salt);
 
         let expected_mac = MacResult::new(&expected_mac);
         let mac =
-            AesMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, &hmac_key);
+            EncryptedMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, &hmac_key);
 
         if mac != expected_mac {
             return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into());
@@ -193,14 +193,14 @@ impl AesMmapDirectory {
     fn create_new_store(key_path: &Path, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
-        let (key, hmac_key, salt) = AesMmapDirectory::derive_key(passphrase)?;
+        let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(passphrase)?;
 
         // Generate a random initialization vector for our AES encryptor.
-        let iv = AesMmapDirectory::generate_iv()?;
+        let iv = EncryptedMmapDirectory::generate_iv()?;
         // Generate a new random store key. This key will encrypt our tantivy
         // indexing files. The key itself is stored encrypted using the derived
         // key.
-        let store_key = AesMmapDirectory::generate_key()?;
+        let store_key = EncryptedMmapDirectory::generate_key()?;
         // let algorithm = AesSafe128Encryptor::new(&key);
         let algorithm = AesSafe256Encryptor::new(&key);
         let mut encryptor = CtrMode::new(algorithm, iv.clone());
@@ -239,7 +239,7 @@ impl AesMmapDirectory {
             }
         }
 
-        let mac = AesMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
+        let mac = EncryptedMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
         key_file.write_all(mac.code())?;
 
         // Write down the encrypted key.
@@ -281,12 +281,12 @@ impl AesMmapDirectory {
             IoError::new(ErrorKind::Other, format!("error generating salt: {:?}", e))
         })?;
 
-        let (key, hmac_key) = AesMmapDirectory::rederive_key(passphrase, &salt);
+        let (key, hmac_key) = EncryptedMmapDirectory::rederive_key(passphrase, &salt);
         Ok((key, hmac_key, salt))
     }
 }
 
-impl Directory for AesMmapDirectory {
+impl Directory for EncryptedMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
 
@@ -366,12 +366,12 @@ use tempfile::tempdir;
 #[test]
 fn create_new_store_and_reopen() {
     let tmpdir = tempdir().unwrap();
-    let dir = AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
+    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
     drop(dir);
     let dir =
-        AesMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
+        EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
     drop(dir);
-    let dir = AesMmapDirectory::open(tmpdir.path(), "password");
+    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "password");
     assert!(
         dir.is_err(),
         "Opened an existing store with the wrong passphrase"
@@ -381,7 +381,7 @@ fn create_new_store_and_reopen() {
 #[test]
 fn create_store_with_empty_passphrase() {
     let tmpdir = tempdir().unwrap();
-    let dir = AesMmapDirectory::open(tmpdir.path(), "");
+    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "");
     assert!(
         dir.is_err(),
         "Opened an existing store with the wrong passphrase"
