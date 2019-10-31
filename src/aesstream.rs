@@ -178,7 +178,7 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
 
         // TODO make the numeric conversion safe.
         if end < (dec.block_size() + mac_length) as u64 {
-            panic!("File doesn't contain IV or MAC");
+            return Err(Error::new(ErrorKind::Other, "File doesn't contain a valid IV or MAC"));
         }
 
         // TODO make the numeric conversion safe.
@@ -199,7 +199,9 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
             }
         }
 
-        assert!(mac.result() == expected_mac, "Mac differ");
+        if mac.result() != expected_mac {
+            return Err(Error::new(ErrorKind::Other, "Invalid MAC"));
+        }
 
         // TODO make the numeric conversion safe.
         reader.seek(SeekFrom::Start(iv_length as u64))?;
