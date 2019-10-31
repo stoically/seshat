@@ -25,9 +25,9 @@ use tantivy::directory::{
     AntiCallToken, DirectoryLock, Lock, ReadOnlySource, TerminatingWrite, WatchCallback, WritePtr,
 };
 
-pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, W: Write>(AesWriter<E, W>);
+pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(AesWriter<E, M, W>);
 
-const KEYFILE: &str = "seshat_index.key";
+const KEYFILE: &str = "seshat-index.key";
 const SALT_SIZE: usize = 16;
 const IV_SIZE: usize = 16;
 const KEY_SIZE: usize = 32;
@@ -35,7 +35,7 @@ const MAC_LENGTH: usize = 32;
 const VERSION: u8 = 1;
 const PBKDF_COUNT: u32 = 1000;
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Write for AesFile<E, W> {
+impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Write for AesFile<E, M, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         self.0.write(buf)
     }
@@ -45,14 +45,14 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Write for AesFile<E, 
     }
 }
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> TerminatingWrite for AesFile<E, W> {
+impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite for AesFile<E, M, W> {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
         self.0.flush()
     }
 }
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, W: Write> Deref for AesFile<E, W> {
-    type Target = AesWriter<E, W>;
+impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for AesFile<E, M, W> {
+    type Target = AesWriter<E, M, W>;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
@@ -273,7 +273,9 @@ impl Directory for AesMmapDirectory {
         let source = self.mmap_dir.open_read(path)?;
 
         let decryptor = AesSafe256Encryptor::new(&self.store_key);
-        let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor).unwrap();
+        // TODO don't use the same key for Mac as for encryption.
+        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor, mac).unwrap();
         let mut decrypted = Vec::new();
 
         reader.read_to_end(&mut decrypted).unwrap();
@@ -296,7 +298,8 @@ impl Directory for AesMmapDirectory {
         };
 
         let encryptor = AesSafe256Encryptor::new(&self.store_key);
-        let writer = AesWriter::new(file, encryptor).unwrap();
+        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let writer = AesWriter::new(file, encryptor, mac).unwrap();
         let file = AesFile(writer);
         Ok(BufWriter::new(Box::new(file)))
     }
@@ -305,7 +308,8 @@ impl Directory for AesMmapDirectory {
         let data = self.mmap_dir.atomic_read(path)?;
 
         let decryptor = AesSafe256Encryptor::new(&self.store_key);
-        let mut reader = AesReader::new(Cursor::new(data), decryptor).unwrap();
+        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let mut reader = AesReader::new(Cursor::new(data), decryptor, mac).unwrap();
         let mut decrypted = Vec::new();
 
         reader.read_to_end(&mut decrypted).unwrap();
@@ -314,9 +318,10 @@ impl Directory for AesMmapDirectory {
 
     fn atomic_write(&mut self, path: &Path, data: &[u8]) -> std::io::Result<()> {
         let encryptor = AesSafe256Encryptor::new(&self.store_key);
+        let mac = Hmac::new(Sha256::new(), &self.store_key);
         let mut encrypted = Vec::new();
         {
-            let mut writer = AesWriter::new(&mut encrypted, encryptor)?;
+            let mut writer = AesWriter::new(&mut encrypted, encryptor, mac)?;
             writer.write_all(data)?;
         }
 
