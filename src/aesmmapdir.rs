@@ -27,6 +27,8 @@ use tantivy::directory::{
 
 pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(AesWriter<E, M, W>);
 
+type KeyDerivationResult = (Vec<u8>, Vec<u8>, Vec<u8>);
+
 const KEYFILE: &str = "seshat-index.key";
 const SALT_SIZE: usize = 16;
 const IV_SIZE: usize = 16;
@@ -120,7 +122,6 @@ impl AesMmapDirectory {
             return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into());
         }
 
-        // let algorithm = AesSafe128Encryptor::new(&key);
         let algorithm = AesSafe256Encryptor::new(&key);
         let mut decryptor = CtrMode::new(algorithm, iv.to_vec());
 
@@ -163,7 +164,6 @@ impl AesMmapDirectory {
         encrypted_key: &[u8],
         key: &[u8],
     ) -> MacResult {
-        // TODO use a better key here.
         let mut hmac = Hmac::new(Sha256::new(), key);
         hmac.input(&[version]);
         hmac.input(&iv);
@@ -256,7 +256,7 @@ impl AesMmapDirectory {
         (Vec::from(key), Vec::from(hmac_key))
     }
 
-    fn derive_key(passphrase: &str) -> Result<(Vec<u8>, Vec<u8>, Vec<u8>), OpenDirectoryError> {
+    fn derive_key(passphrase: &str) -> Result<KeyDerivationResult, OpenDirectoryError> {
         let mut rng = thread_rng();
         let mut salt = vec![0u8; SALT_SIZE];
         rng.try_fill(&mut salt[..]).map_err(|e| {
