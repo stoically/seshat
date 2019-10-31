@@ -13,6 +13,7 @@ use crypto::mac::{Mac, MacResult};
 use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::{Sha256, Sha512};
 use crypto::symmetriccipher::{Decryptor, Encryptor};
+use crypto::hkdf::hkdf_expand;
 
 use crate::aesstream::{AesReader, AesWriter};
 
@@ -67,7 +68,8 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for Aes
 #[derive(Clone, Debug)]
 pub struct AesMmapDirectory {
     mmap_dir: tantivy::directory::MmapDirectory,
-    store_key: Vec<u8>,
+    encryption_key: Vec<u8>,
+    mac_key: Vec<u8>,
 }
 
 impl AesMmapDirectory {
@@ -91,10 +93,21 @@ impl AesMmapDirectory {
             }
         };
 
+        let (encryption_key, mac_key) = AesMmapDirectory::expand_store_key(&store_key);
+
         Ok(AesMmapDirectory {
             mmap_dir,
-            store_key,
+            encryption_key,
+            mac_key,
         })
+    }
+
+    fn expand_store_key(store_key: &[u8]) -> (Vec<u8>, Vec<u8>){
+        let mut hkdf_result = [0u8; KEY_SIZE * 2];
+
+        hkdf_expand(Sha512::new(), &store_key, &[], &mut hkdf_result);
+        let (key, hmac_key) = hkdf_result.split_at(KEY_SIZE);
+        (Vec::from(key), Vec::from(hmac_key))
     }
 
     fn load_store_key(mut key_file: File, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
@@ -276,9 +289,8 @@ impl Directory for AesMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
 
-        let decryptor = AesSafe256Encryptor::new(&self.store_key);
-        // TODO don't use the same key for Mac as for encryption.
-        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let decryptor = AesSafe256Encryptor::new(&self.encryption_key);
+        let mac = Hmac::new(Sha256::new(), &self.mac_key);
         let mut reader = AesReader::new(Cursor::new(source.as_slice()), decryptor, mac).unwrap();
         let mut decrypted = Vec::new();
 
@@ -301,8 +313,8 @@ impl Directory for AesMmapDirectory {
             Err(e) => panic!(e.to_string()),
         };
 
-        let encryptor = AesSafe256Encryptor::new(&self.store_key);
-        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let encryptor = AesSafe256Encryptor::new(&self.encryption_key);
+        let mac = Hmac::new(Sha256::new(), &self.mac_key);
         let writer = AesWriter::new(file, encryptor, mac).unwrap();
         let file = AesFile(writer);
         Ok(BufWriter::new(Box::new(file)))
@@ -311,8 +323,8 @@ impl Directory for AesMmapDirectory {
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
         let data = self.mmap_dir.atomic_read(path)?;
 
-        let decryptor = AesSafe256Encryptor::new(&self.store_key);
-        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let decryptor = AesSafe256Encryptor::new(&self.encryption_key);
+        let mac = Hmac::new(Sha256::new(), &self.mac_key);
         let mut reader = AesReader::new(Cursor::new(data), decryptor, mac).unwrap();
         let mut decrypted = Vec::new();
 
@@ -321,8 +333,8 @@ impl Directory for AesMmapDirectory {
     }
 
     fn atomic_write(&mut self, path: &Path, data: &[u8]) -> std::io::Result<()> {
-        let encryptor = AesSafe256Encryptor::new(&self.store_key);
-        let mac = Hmac::new(Sha256::new(), &self.store_key);
+        let encryptor = AesSafe256Encryptor::new(&self.encryption_key);
+        let mac = Hmac::new(Sha256::new(), &self.mac_key);
         let mut encrypted = Vec::new();
         {
             let mut writer = AesWriter::new(&mut encrypted, encryptor, mac)?;
