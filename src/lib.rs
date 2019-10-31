@@ -20,7 +20,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod aesmmapdir;
+mod encrypteddir;
 mod aesstream;
 mod config;
 mod database;

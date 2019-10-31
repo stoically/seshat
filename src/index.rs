@@ -18,8 +18,8 @@ use tantivy::tokenizer::Tokenizer;
 
 use crate::config::{Config, Language, SearchConfig};
 use crate::events::{Event, EventId, EventType};
+use crate::encrypteddir::AesMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
-use crate::aesmmapdir::AesMmapDirectory;
 
 // Tantivy requires at least 3MB per writer thread and will panic if we
 // give it less than 3MB for the total writer heap size. The amount of writer 
