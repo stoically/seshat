@@ -24,14 +24,14 @@
 
 //! Read/Write Wrapper for AES Encryption and Decryption during I/O Operations
 //!
-use std::io::{Error, ErrorKind, Read, Result, Write, Seek, SeekFrom};
-use std::ops::Neg;
 use std::cmp;
+use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
+use std::ops::Neg;
 
 use crypto::blockmodes::CtrMode;
 use crypto::buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer};
-use crypto::symmetriccipher::{BlockEncryptor, Decryptor, Encryptor};
 use crypto::mac::{Mac, MacResult};
+use crypto::symmetriccipher::{BlockEncryptor, Decryptor, Encryptor};
 use rand::{thread_rng, Rng};
 
 const BUFFER_SIZE: usize = 8192;
@@ -70,7 +70,7 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
         Ok(AesWriter {
             writer,
             enc: CtrMode::new(enc, iv),
-            mac
+            mac,
         })
     }
 
@@ -178,7 +178,10 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
 
         // TODO make the numeric conversion safe.
         if end < (dec.block_size() + mac_length) as u64 {
-            return Err(Error::new(ErrorKind::Other, "File doesn't contain a valid IV or MAC"));
+            return Err(Error::new(
+                ErrorKind::Other,
+                "File doesn't contain a valid IV or MAC",
+            ));
         }
 
         // TODO make the numeric conversion safe.
@@ -193,7 +196,8 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         let mut eof = false;
 
         while !eof {
-            let (buffer, end_of_file) = AesReader::<D, R>::read_until_mac(&mut reader, end, mac.output_bytes())?;
+            let (buffer, end_of_file) =
+                AesReader::<D, R>::read_until_mac(&mut reader, end, mac.output_bytes())?;
             eof = end_of_file;
             mac.input(&buffer);
         }
@@ -215,7 +219,11 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         })
     }
 
-    fn read_until_mac(reader: &mut R, total_length: u64, mac_length: usize) -> Result<(Vec<u8>, bool)> {
+    fn read_until_mac(
+        reader: &mut R,
+        total_length: u64,
+        mac_length: usize,
+    ) -> Result<(Vec<u8>, bool)> {
         let mut buffer = vec![0u8; BUFFER_SIZE];
         let read = reader.read(&mut buffer)?;
 
@@ -232,7 +240,8 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
 
     /// Reads at max BUFFER_SIZE bytes, handles potential eof and returns the buffer as Vec<u8>
     fn fill_buf(&mut self) -> Result<Vec<u8>> {
-        let (buffer, eof) = AesReader::<D, R>::read_until_mac(&mut self.reader, self.length, self.mac_length)?;
+        let (buffer, eof) =
+            AesReader::<D, R>::read_until_mac(&mut self.reader, self.length, self.mac_length)?;
         self.eof = eof;
         Ok(buffer)
     }
