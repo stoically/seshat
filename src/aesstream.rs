@@ -190,13 +190,12 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         // TODO make the numeric conversion safe.
         reader.seek(SeekFrom::Start(iv_length as u64))?;
 
-        loop {
-            let (buffer, eof) = AesReader::<D, R>::read_until_mac(&mut reader, end, mac.output_bytes())?;
-            mac.input(&buffer);
+        let mut eof = false;
 
-            if eof {
-                break;
-            }
+        while !eof {
+            let (buffer, end_of_file) = AesReader::<D, R>::read_until_mac(&mut reader, end, mac.output_bytes())?;
+            eof = end_of_file;
+            mac.input(&buffer);
         }
 
         if mac.result() != expected_mac {
