@@ -16,7 +16,7 @@ use std::path::Path;
 use tantivy as tv;
 use tantivy::tokenizer::Tokenizer;
 
-use crate::encrypteddir::AesMmapDirectory;
+use crate::encrypteddir::EncryptedMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
 use crate::types::{Config, Event, EventId, EventType, Language, SearchConfig};
 
@@ -157,7 +157,7 @@ impl Index {
 
         let index = match &config.passphrase {
             Some(p) => {
-                let dir = AesMmapDirectory::open(path, &p)?;
+                let dir = EncryptedMmapDirectory::open(path, &p)?;
                 tv::Index::open_or_create(dir, schema)?
             }
             None => {
