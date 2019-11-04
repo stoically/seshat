@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::Error as IoError;
 use std::io::{BufWriter, Cursor, ErrorKind, Read, Write};
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crypto::aessafe::AesSafe256Encryptor;
 use crypto::blockmodes::CtrMode;
@@ -87,6 +87,7 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for Aes
 
 #[derive(Clone, Debug)]
 pub struct EncryptedMmapDirectory {
+    path: PathBuf,
     mmap_dir: tantivy::directory::MmapDirectory,
     encryption_key: Vec<u8>,
     mac_key: Vec<u8>,
@@ -94,8 +95,10 @@ pub struct EncryptedMmapDirectory {
 
 impl EncryptedMmapDirectory {
     pub fn open<P: AsRef<Path>>(path: P, passphrase: &str) -> Result<Self, OpenDirectoryError> {
-        let key_path = path.as_ref().join(KEYFILE);
-        let mmap_dir = tantivy::directory::MmapDirectory::open(path)?;
+        let path = PathBuf::from(path.as_ref());
+
+        let key_path = path.as_path().join(KEYFILE);
+        let mmap_dir = tantivy::directory::MmapDirectory::open(&path)?;
 
         if passphrase.is_empty() {
             return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
@@ -116,6 +119,7 @@ impl EncryptedMmapDirectory {
         let (encryption_key, mac_key) = EncryptedMmapDirectory::expand_store_key(&store_key);
 
         Ok(EncryptedMmapDirectory {
+            path,
             mmap_dir,
             encryption_key,
             mac_key,
