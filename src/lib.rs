@@ -26,7 +26,6 @@ mod database;
 mod encrypteddir;
 mod index;
 mod japanese_tokenizer;
-mod types;
 mod events;
 mod error;
 
@@ -34,7 +33,6 @@ pub use database::Connection;
 pub use database::Database;
 pub use database::Searcher;
 
-pub use types::SearchResult;
 pub use error::{Result, Error};
 
 pub use config::{Config, Language, SearchConfig};
