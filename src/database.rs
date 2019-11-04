@@ -1229,3 +1229,47 @@ fn encrypted_db() {
         "opening the database without a passphrase should fail"
     );
 }
+
+#[test]
+fn change_passphrase() {
+    let tmpdir = tempdir().unwrap();
+    let db_config = Config::new().set_passphrase("test");
+    let mut db = match Database::new_with_config(tmpdir.path(), &db_config) {
+        Ok(db) => db,
+        Err(e) => panic!("Coulnd't open encrypted database {}", e),
+    };
+
+    let connection = db
+        .get_connection()
+        .expect("Could not get database connection");
+    assert!(
+        connection.is_empty().unwrap(),
+        "New database should be empty"
+    );
+
+    let profile = Profile::new("Alice", "");
+    db.add_event(EVENT.clone(), profile.clone());
+
+    db.commit().expect("Could not commit events to database");
+    db.change_passphrase("wordpass")
+        .expect("Could not change the database passphrase");
+
+    let db_config = Config::new().set_passphrase("wordpass");
+    let mut db = Database::new_with_config(tmpdir.path(), &db_config)
+        .expect("Could not open database with the new passphrase");
+    let connection = db
+        .get_connection()
+        .expect("Could not get database connection");
+    assert!(
+        !connection.is_empty().unwrap(),
+        "Database shouldn't be empty anymore"
+    );
+    drop(db);
+
+    let db_config = Config::new().set_passphrase("test");
+    let db = Database::new_with_config(tmpdir.path(), &db_config);
+    assert!(
+        db.is_err(),
+        "opening the database without a passphrase should fail"
+    );
+}
