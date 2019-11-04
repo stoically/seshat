@@ -53,7 +53,12 @@ const IV_SIZE: usize = 16;
 const KEY_SIZE: usize = 32;
 const MAC_LENGTH: usize = 32;
 const VERSION: u8 = 1;
-const PBKDF_COUNT: u32 = 1000;
+
+#[cfg(test)]
+const PBKDF_COUNT: u32 = 10;
+
+#[cfg(not(test))]
+const PBKDF_COUNT: u32 = 10_000;
 
 impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Write for AesFile<E, M, W> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
