@@ -18,7 +18,8 @@ use tantivy::tokenizer::Tokenizer;
 
 use crate::encrypteddir::EncryptedMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
-use crate::types::{Config, Event, EventId, EventType, Language, SearchConfig};
+use crate::types::{Event, EventId, EventType};
+use crate::config::{Config, SearchConfig, Language};
 
 #[cfg(test)]
 use tempfile::TempDir;

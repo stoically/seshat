@@ -20,9 +20,10 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod encrypteddir;
 mod aesstream;
+mod config;
 mod database;
+mod encrypteddir;
 mod index;
 mod japanese_tokenizer;
 mod types;
@@ -32,9 +33,10 @@ pub use database::Database;
 pub use database::Searcher;
 
 pub use types::{
-    CheckpointDirection, Config, CrawlerCheckpoint, Error, Event, EventType, Language, Profile,
-    Result, SearchConfig, SearchResult,
+    CheckpointDirection, CrawlerCheckpoint, Error, Event, EventType, Profile, Result, SearchResult,
 };
+
+pub use config::{Config, Language, SearchConfig};
 
 pub use std::sync::mpsc::Receiver;
 
