@@ -20,7 +20,7 @@
 // SOFTWARE.
 
 // This file originates from the rust-aes-stream repo[1], it has been moddified
-// to include authentication for the encrypted files.
+// to use AES-CTR mode and to authenticate the encrypted files.
 // [1] https://github.com/oberien/rust-aes-stream/
 
 //! Read/Write Wrapper for AES Encryption and Decryption during I/O Operations
