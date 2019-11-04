@@ -259,6 +259,30 @@ impl Database {
         })
     }
 
+    /// Change the passphrase of the Seshat database.
+    ///
+    /// Note that this consumes the database object and any searcher objects
+    /// can't be used anymore. A new database will have to be opened and new
+    /// searcher objects as well.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The directory where the database will be stored in. This
+    /// should be an empty directory if a new database should be created.
+    /// * `new_passphrase` - The passphrase that should be used instead of the
+    /// current one.
+    pub fn change_passphrase(self, new_passphrase: &str) -> Result<()> {
+        match self.passphrase {
+            Some(p) => {
+                Index::change_passphrase(&self.path, &p, new_passphrase)?;
+                self.connection
+                    .pragma_update(None, "rekey", &new_passphrase as &dyn ToSql)?;
+            }
+            None => panic!("Database isn't encrypted"),
+        }
+        Ok(())
+    }
+
     fn unlock(connection: &rusqlite::Connection, passphrase: &str) -> Result<()> {
         let mut statement = connection.prepare("PRAGMA cipher_version")?;
         let results = statement.query_map(NO_PARAMS, |row| row.get::<usize, String>(0))?;
