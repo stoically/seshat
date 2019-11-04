@@ -152,8 +152,13 @@ impl EncryptedMmapDirectory {
         let (key, hmac_key) = EncryptedMmapDirectory::rederive_key(passphrase, &salt);
 
         let expected_mac = MacResult::new(&expected_mac);
-        let mac =
-            EncryptedMmapDirectory::calculate_hmac(version[0], &iv, &salt, &encrypted_key, &hmac_key);
+        let mac = EncryptedMmapDirectory::calculate_hmac(
+            version[0],
+            &iv,
+            &salt,
+            &encrypted_key,
+            &hmac_key,
+        );
 
         if mac != expected_mac {
             return Err(IoError::new(ErrorKind::Other, "invalid MAC of the store key").into());
@@ -258,7 +263,8 @@ impl EncryptedMmapDirectory {
             }
         }
 
-        let mac = EncryptedMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
+        let mac =
+            EncryptedMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
         key_file.write_all(mac.code())?;
 
         // Write down the encrypted key.
@@ -385,10 +391,11 @@ use tempfile::tempdir;
 #[test]
 fn create_new_store_and_reopen() {
     let tmpdir = tempdir().unwrap();
-    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
-    drop(dir);
     let dir =
-        EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't open the existing store");
+        EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
+    drop(dir);
+    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "wordpass")
+        .expect("Can't open the existing store");
     drop(dir);
     let dir = EncryptedMmapDirectory::open(tmpdir.path(), "password");
     assert!(

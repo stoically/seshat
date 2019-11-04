@@ -32,9 +32,11 @@ use fake::{Fake, Faker};
 use tempfile::tempdir;
 
 use crate::config::{Config, SearchConfig};
+use crate::error::{Error, Result};
+use crate::events::{
+    CrawlerCheckpoint, Event, EventContext, EventId, HistoricEventsT, Profile, SerializedEvent,
+};
 use crate::index::{Index, IndexSearcher, Writer};
-use crate::events::{CrawlerCheckpoint, Event, EventContext, EventId, Profile, SerializedEvent, HistoricEventsT};
-use crate::error::{Result, Error};
 
 #[cfg(test)]
 use crate::events::CheckpointDirection;

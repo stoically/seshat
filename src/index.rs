@@ -16,10 +16,10 @@ use std::path::Path;
 use tantivy as tv;
 use tantivy::tokenizer::Tokenizer;
 
+use crate::config::{Config, Language, SearchConfig};
 use crate::encrypteddir::EncryptedMmapDirectory;
-use crate::japanese_tokenizer::TinySegmenterTokenizer;
 use crate::events::{Event, EventId, EventType};
-use crate::config::{Config, SearchConfig, Language};
+use crate::japanese_tokenizer::TinySegmenterTokenizer;
 
 #[cfg(test)]
 use tempfile::TempDir;
