@@ -441,3 +441,20 @@ fn create_store_with_empty_passphrase() {
         "Opened an existing store with the wrong passphrase"
     );
 }
+
+#[test]
+fn change_passphrase() {
+    let tmpdir = tempdir().unwrap();
+    let dir =
+        EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
+
+    dir.change_passphrase("wordpass", "password").expect("Can't change passphrase");
+    drop(dir);
+    let dir = EncryptedMmapDirectory::open(tmpdir.path(), "wordpass");
+    assert!(
+        dir.is_err(),
+        "Opened an existing store with the old passphrase"
+    );
+    let _ = EncryptedMmapDirectory::open(tmpdir.path(), "password")
+        .expect("Can't open the store with the new passphrase");
+}
