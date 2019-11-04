@@ -218,14 +218,20 @@ impl EncryptedMmapDirectory {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
         let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(passphrase)?;
-
-        // Generate a random initialization vector for our AES encryptor.
-        let iv = EncryptedMmapDirectory::generate_iv()?;
         // Generate a new random store key. This key will encrypt our tantivy
         // indexing files. The key itself is stored encrypted using the derived
         // key.
         let store_key = EncryptedMmapDirectory::generate_key()?;
-        // let algorithm = AesSafe128Encryptor::new(&key);
+
+        // Encrypt and save the encrypted store key to a file.
+        EncryptedMmapDirectory::encrypt_store_key(&key, &salt, &hmac_key, &store_key, key_path)?;
+
+        Ok(store_key)
+    }
+
+    fn encrypt_store_key(key: &[u8], salt: &[u8], hmac_key: &[u8], store_key: &[u8], key_path: &Path) -> Result<(), OpenDirectoryError>{
+        // Generate a random initialization vector for our AES encryptor.
+        let iv = EncryptedMmapDirectory::generate_iv()?;
         let algorithm = AesSafe256Encryptor::new(&key);
         let mut encryptor = CtrMode::new(algorithm, iv.clone());
 
@@ -270,7 +276,7 @@ impl EncryptedMmapDirectory {
         // Write down the encrypted key.
         key_file.write_all(&encrypted_key)?;
 
-        Ok(store_key)
+        Ok(())
     }
 
     fn generate_iv() -> Result<Vec<u8>, OpenDirectoryError> {
