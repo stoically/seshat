@@ -20,10 +20,10 @@
 #[macro_use]
 extern crate lazy_static;
 
-mod encrypteddir;
 mod aesstream;
 mod config;
 mod database;
+mod encrypteddir;
 mod error;
 mod events;
 mod index;

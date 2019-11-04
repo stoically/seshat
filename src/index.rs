@@ -17,8 +17,8 @@ use tantivy as tv;
 use tantivy::tokenizer::Tokenizer;
 
 use crate::config::{Config, Language, SearchConfig};
-use crate::events::{Event, EventId, EventType};
 use crate::encrypteddir::EncryptedMmapDirectory;
+use crate::events::{Event, EventId, EventType};
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
 
 // Tantivy requires at least 3MB per writer thread and will panic if we
