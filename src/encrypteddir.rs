@@ -126,6 +126,24 @@ impl EncryptedMmapDirectory {
         })
     }
 
+    pub fn change_passphrase(&self, old: &str, new: &str) -> Result<(), OpenDirectoryError>{
+        if old.is_empty() || new.is_empty() {
+            return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
+        }
+
+        let key_path = self.path.join(KEYFILE);
+        let key_file = File::open(&key_path)?;
+
+        // Load our store key using the old passphrase.
+        let store_key = EncryptedMmapDirectory::load_store_key(key_file, old)?;
+        // Derive new encryption keys using the new passphrase.
+        let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(new)?;
+        // Re-encrypt our store key using the newly derived keys.
+        EncryptedMmapDirectory::encrypt_store_key(&key, &salt, &hmac_key, &store_key, &key_path)?;
+
+        Ok(())
+    }
+
     fn expand_store_key(store_key: &[u8]) -> (Vec<u8>, Vec<u8>) {
         let mut hkdf_result = [0u8; KEY_SIZE * 2];
 
