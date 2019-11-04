@@ -126,12 +126,16 @@ impl EncryptedMmapDirectory {
         })
     }
 
-    pub fn change_passphrase(&self, old: &str, new: &str) -> Result<(), OpenDirectoryError>{
+    pub fn change_passphrase<P: AsRef<Path>>(
+        path: P,
+        old: &str,
+        new: &str,
+    ) -> Result<(), OpenDirectoryError> {
         if old.is_empty() || new.is_empty() {
             return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
         }
 
-        let key_path = self.path.join(KEYFILE);
+        let key_path = path.as_ref().join(KEYFILE);
         let key_file = File::open(&key_path)?;
 
         // Load our store key using the old passphrase.
@@ -251,7 +255,13 @@ impl EncryptedMmapDirectory {
         Ok(store_key)
     }
 
-    fn encrypt_store_key(key: &[u8], salt: &[u8], hmac_key: &[u8], store_key: &[u8], key_path: &Path) -> Result<(), OpenDirectoryError>{
+    fn encrypt_store_key(
+        key: &[u8],
+        salt: &[u8],
+        hmac_key: &[u8],
+        store_key: &[u8],
+        key_path: &Path,
+    ) -> Result<(), OpenDirectoryError> {
         // Generate a random initialization vector for our AES encryptor.
         let iv = EncryptedMmapDirectory::generate_iv()?;
         let algorithm = AesSafe256Encryptor::new(&key);
@@ -448,8 +458,9 @@ fn change_passphrase() {
     let dir =
         EncryptedMmapDirectory::open(tmpdir.path(), "wordpass").expect("Can't create a new store");
 
-    dir.change_passphrase("wordpass", "password").expect("Can't change passphrase");
     drop(dir);
+    EncryptedMmapDirectory::change_passphrase(tmpdir.path(), "wordpass", "password")
+        .expect("Can't change passphrase");
     let dir = EncryptedMmapDirectory::open(tmpdir.path(), "wordpass");
     assert!(
         dir.is_err(),
