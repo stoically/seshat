@@ -196,6 +196,15 @@ impl Index {
         })
     }
 
+    pub fn change_passphrase<P: AsRef<Path>>(
+        path: P,
+        old: &str,
+        new: &str,
+    ) -> Result<(), tv::Error> {
+        EncryptedMmapDirectory::change_passphrase(path, old, new)?;
+        Ok(())
+    }
+
     fn create_text_options(tokenizer: &str) -> tv::schema::TextOptions {
         let indexing = tv::schema::TextFieldIndexing::default()
             .set_tokenizer(tokenizer)
