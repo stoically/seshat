@@ -33,13 +33,12 @@ use tempfile::tempdir;
 
 use crate::config::{Config, SearchConfig};
 use crate::index::{Index, IndexSearcher, Writer};
-use crate::types::{
-    CrawlerCheckpoint, Error, Event, EventContext, EventId, Profile, Result, SearchResult,
-    ThreadMessage,
-};
+use crate::types::{SearchResult, ThreadMessage};
+use crate::events::{CrawlerCheckpoint, Event, EventContext, EventId, Profile};
+use crate::error::{Result, Error};
 
 #[cfg(test)]
-use crate::types::CheckpointDirection;
+use crate::events::CheckpointDirection;
 #[cfg(test)]
 use crate::EVENT;
 

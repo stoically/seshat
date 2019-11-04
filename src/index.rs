@@ -18,14 +18,14 @@ use tantivy::tokenizer::Tokenizer;
 
 use crate::encrypteddir::EncryptedMmapDirectory;
 use crate::japanese_tokenizer::TinySegmenterTokenizer;
-use crate::types::{Event, EventId, EventType};
+use crate::events::{Event, EventId, EventType};
 use crate::config::{Config, SearchConfig, Language};
 
 #[cfg(test)]
 use tempfile::TempDir;
 
 #[cfg(test)]
-use crate::types::{EVENT, JAPANESE_EVENTS};
+use crate::events::{EVENT, JAPANESE_EVENTS};
 
 pub(crate) struct Index {
     index: tv::Index,
