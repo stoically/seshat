@@ -41,11 +41,14 @@ use tantivy::directory::{
     AntiCallToken, DirectoryLock, Lock, ReadOnlySource, TerminatingWrite, WatchCallback, WritePtr,
 };
 
+use zeroize::Zeroizing;
+
 pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(
     AesWriter<E, M, W>,
 );
 
-type KeyDerivationResult = (Vec<u8>, Vec<u8>, Vec<u8>);
+type KeyBuffer = Zeroizing<Vec<u8>>;
+type KeyDerivationResult = (KeyBuffer, KeyBuffer, Vec<u8>);
 
 const KEYFILE: &str = "seshat-index.key";
 const SALT_SIZE: usize = 16;
@@ -89,8 +92,8 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for Aes
 pub struct EncryptedMmapDirectory {
     path: PathBuf,
     mmap_dir: tantivy::directory::MmapDirectory,
-    encryption_key: Vec<u8>,
-    mac_key: Vec<u8>,
+    encryption_key: KeyBuffer,
+    mac_key: KeyBuffer,
 }
 
 impl EncryptedMmapDirectory {
@@ -148,15 +151,15 @@ impl EncryptedMmapDirectory {
         Ok(())
     }
 
-    fn expand_store_key(store_key: &[u8]) -> (Vec<u8>, Vec<u8>) {
-        let mut hkdf_result = [0u8; KEY_SIZE * 2];
+    fn expand_store_key(store_key: &[u8]) -> (KeyBuffer, KeyBuffer) {
+        let mut hkdf_result = Zeroizing::new([0u8; KEY_SIZE * 2]);
 
-        hkdf_expand(Sha512::new(), &store_key, &[], &mut hkdf_result);
+        hkdf_expand(Sha512::new(), &store_key, &[], &mut *hkdf_result);
         let (key, hmac_key) = hkdf_result.split_at(KEY_SIZE);
-        (Vec::from(key), Vec::from(hmac_key))
+        (Zeroizing::new(Vec::from(key)), Zeroizing::new(Vec::from(hmac_key)))
     }
 
-    fn load_store_key(mut key_file: File, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
+    fn load_store_key(mut key_file: File, passphrase: &str) -> Result<KeyBuffer, OpenDirectoryError> {
         let mut iv = [0u8; IV_SIZE];
         let mut salt = [0u8; SALT_SIZE];
         let mut expected_mac = [0u8; MAC_LENGTH];
@@ -193,7 +196,7 @@ impl EncryptedMmapDirectory {
         let algorithm = AesSafe256Encryptor::new(&key);
         let mut decryptor = CtrMode::new(algorithm, iv.to_vec());
 
-        let mut out = [0u8; KEY_SIZE];
+        let mut out = Zeroizing::new(vec![0u8; KEY_SIZE]);
         let mut write_buf = RefWriteBuffer::new(&mut out);
 
         let remaining;
@@ -222,7 +225,7 @@ impl EncryptedMmapDirectory {
             }
         }
 
-        Ok(out.to_vec())
+        Ok(out)
     }
 
     fn calculate_hmac(
@@ -240,7 +243,7 @@ impl EncryptedMmapDirectory {
         hmac.result()
     }
 
-    fn create_new_store(key_path: &Path, passphrase: &str) -> Result<Vec<u8>, OpenDirectoryError> {
+    fn create_new_store(key_path: &Path, passphrase: &str) -> Result<KeyBuffer, OpenDirectoryError> {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
         let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(passphrase)?;
@@ -319,8 +322,8 @@ impl EncryptedMmapDirectory {
         Ok(iv)
     }
 
-    fn generate_key() -> Result<Vec<u8>, OpenDirectoryError> {
-        let mut key = vec![0u8; KEY_SIZE];
+    fn generate_key() -> Result<KeyBuffer, OpenDirectoryError> {
+        let mut key = Zeroizing::new(vec![0u8; KEY_SIZE]);
         let mut rng = thread_rng();
         rng.try_fill(&mut key[..]).map_err(|e| {
             IoError::new(ErrorKind::Other, format!("error generating key: {:?}", e))
@@ -328,13 +331,13 @@ impl EncryptedMmapDirectory {
         Ok(key)
     }
 
-    fn rederive_key(passphrase: &str, salt: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    fn rederive_key(passphrase: &str, salt: &[u8]) -> (KeyBuffer, KeyBuffer) {
         let mut mac = Hmac::new(Sha512::new(), passphrase.as_bytes());
-        let mut pbkdf_result = [0u8; KEY_SIZE * 2];
+        let mut pbkdf_result = Zeroizing::new([0u8; KEY_SIZE * 2]);
 
-        pbkdf2(&mut mac, &salt, PBKDF_COUNT, &mut pbkdf_result);
+        pbkdf2(&mut mac, &salt, PBKDF_COUNT, &mut *pbkdf_result);
         let (key, hmac_key) = pbkdf_result.split_at(KEY_SIZE);
-        (Vec::from(key), Vec::from(hmac_key))
+        (Zeroizing::new(Vec::from(key)), Zeroizing::new(Vec::from(hmac_key)))
     }
 
     fn derive_key(passphrase: &str) -> Result<KeyDerivationResult, OpenDirectoryError> {
