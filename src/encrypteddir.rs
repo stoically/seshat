@@ -16,7 +16,6 @@ use rand::{thread_rng, Rng};
 use std::fs::File;
 use std::io::Error as IoError;
 use std::io::{BufWriter, Cursor, ErrorKind, Read, Write};
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 
 use crypto::aessafe::AesSafe256Encryptor;
@@ -78,13 +77,6 @@ impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWr
 {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
         self.0.flush()
-    }
-}
-
-impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Deref for AesFile<E, M, W> {
-    type Target = AesWriter<E, M, W>;
-    fn deref(&self) -> &Self::Target {
-        &self.0
     }
 }
 
