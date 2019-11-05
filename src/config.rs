@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use zeroize::Zeroizing;
+
 use crate::events::{EventType, RoomId};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -206,7 +208,7 @@ impl From<&str> for Language {
 /// Configuration for the seshat database.
 pub struct Config {
     pub(crate) language: Language,
-    pub(crate) passphrase: Option<String>,
+    pub(crate) passphrase: Option<Zeroizing<String>>,
 }
 
 impl Config {
@@ -230,7 +232,7 @@ impl Config {
     ///
     /// * `passphrase` - The passphrase of the database.
     pub fn set_passphrase<P: Into<String>>(mut self, passphrase: P) -> Self {
-        self.passphrase = Some(passphrase.into());
+        self.passphrase = Some(Zeroizing::new(passphrase.into()));
         self
     }
 }

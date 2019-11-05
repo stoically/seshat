@@ -31,6 +31,8 @@ use fake::{Fake, Faker};
 #[cfg(test)]
 use tempfile::tempdir;
 
+use zeroize::Zeroizing;
+
 use crate::config::{Config, SearchConfig};
 use crate::error::{Error, Result};
 use crate::events::{
@@ -125,7 +127,7 @@ pub struct Database {
     _write_thread: JoinHandle<()>,
     tx: Sender<ThreadMessage>,
     index: Index,
-    passphrase: Option<String>,
+    passphrase: Option<Zeroizing<String>>,
 }
 
 /// A Seshat database connection.
