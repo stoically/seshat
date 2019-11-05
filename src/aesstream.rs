@@ -26,6 +26,7 @@
 //! Read/Write Wrapper for AES Encryption and Decryption during I/O Operations
 //!
 use std::cmp;
+use std::convert::TryFrom;
 use std::io::{Error, ErrorKind, Read, Result, Seek, SeekFrom, Write};
 use std::ops::Neg;
 
@@ -153,7 +154,7 @@ pub struct AesReader<D: BlockEncryptor, R: Read + Seek> {
     /// Total length of the reader
     length: u64,
     /// Length of the MAC.
-    mac_length: usize,
+    mac_length: u64,
 }
 
 impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
@@ -171,34 +172,38 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         let iv_length = dec.block_size();
         let mac_length = mac.output_bytes();
 
+        let u_iv_length = u64::try_from(iv_length)
+            .map_err(|_| Error::new(ErrorKind::Other, "IV length is too big"))?;
+        let u_mac_length = u64::try_from(mac_length)
+            .map_err(|_| Error::new(ErrorKind::Other, "MAC length is too big"))?;
+        let i_mac_length = i64::try_from(mac_length)
+            .map_err(|_| Error::new(ErrorKind::Other, "MAC length is too big"))?;
+
         let mut iv = vec![0u8; iv_length];
         let mut expected_mac = vec![0u8; mac_length];
 
         reader.read_exact(&mut iv)?;
         let end = reader.seek(SeekFrom::End(0))?;
 
-        // TODO make the numeric conversion safe.
-        if end < (dec.block_size() + mac_length) as u64 {
+        if end < (u_iv_length + u_mac_length) {
             return Err(Error::new(
                 ErrorKind::Other,
                 "File doesn't contain a valid IV or MAC",
             ));
         }
 
-        // TODO make the numeric conversion safe.
-        let seek_back = (mac_length as i64).neg();
+        let seek_back = i_mac_length.neg();
         reader.seek(SeekFrom::End(seek_back))?;
         reader.read_exact(&mut expected_mac)?;
         let expected_mac = MacResult::new_from_owned(expected_mac);
 
-        // TODO make the numeric conversion safe.
-        reader.seek(SeekFrom::Start(iv_length as u64))?;
+        reader.seek(SeekFrom::Start(u_iv_length))?;
 
         let mut eof = false;
 
         while !eof {
             let (buffer, end_of_file) =
-                AesReader::<D, R>::read_until_mac(&mut reader, end, mac.output_bytes())?;
+                AesReader::<D, R>::read_until_mac(&mut reader, end, u_mac_length)?;
             eof = end_of_file;
             mac.input(&buffer);
         }
@@ -207,8 +212,7 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
             return Err(Error::new(ErrorKind::Other, "Invalid MAC"));
         }
 
-        // TODO make the numeric conversion safe.
-        reader.seek(SeekFrom::Start(iv_length as u64))?;
+        reader.seek(SeekFrom::Start(u_iv_length))?;
 
         Ok(AesReader {
             reader,
@@ -216,25 +220,31 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
             buffer: Vec::new(),
             eof: false,
             length: end,
-            mac_length,
+            mac_length: u_mac_length,
         })
     }
 
     fn read_until_mac(
         reader: &mut R,
         total_length: u64,
-        mac_length: usize,
+        mac_length: u64,
     ) -> Result<(Vec<u8>, bool)> {
         let mut buffer = vec![0u8; BUFFER_SIZE];
         let read = reader.read(&mut buffer)?;
 
-        // TODO make the numeric conversion safe.
         let current_pos = reader.seek(SeekFrom::Current(0))?;
-        let mac_start = total_length - mac_length as u64;
+        let mac_start = total_length - mac_length;
         let read_mac_bytes = cmp::max(current_pos - mac_start, 0);
         let eof = current_pos >= mac_start;
 
-        buffer.truncate(read - read_mac_bytes as usize);
+        let read_mac_bytes = usize::try_from(read_mac_bytes).map_err(|_| {
+            Error::new(
+                ErrorKind::Other,
+                "Cannot convert the number of read MAC bytes.",
+            )
+        })?;
+
+        buffer.truncate(read - read_mac_bytes);
 
         Ok((buffer, eof))
     }
