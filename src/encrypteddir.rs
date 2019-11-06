@@ -42,8 +42,17 @@ use tantivy::directory::{
 
 use zeroize::Zeroizing;
 
+/// KeyBuffer type that makes sure that the buffer is zeroed out before being
+/// dropped.
 type KeyBuffer = Zeroizing<Vec<u8>>;
-type KeyDerivationResult = (KeyBuffer, KeyBuffer, Vec<u8>);
+
+/// Key derivation result type for our initial key derivation. Consists of a
+/// tuple containing a encryption key, a MAC key, and a random salt.
+type InitialKeyDerivationResult = (KeyBuffer, KeyBuffer, Vec<u8>);
+
+/// Key derivation result for our subsequent key derivations. The salt will be
+/// read from our key file and we will re-derive our encryption and MAC keys.
+type KeyDerivationResult = (KeyBuffer, KeyBuffer);
 
 const KEYFILE: &str = "seshat-index.key";
 const SALT_SIZE: usize = 16;
@@ -311,7 +320,8 @@ impl EncryptedMmapDirectory {
         Ok(key)
     }
 
-    fn rederive_key(passphrase: &str, salt: &[u8]) -> (KeyBuffer, KeyBuffer) {
+    /// Derive two keys from the given passphrase and the given salt using PBKDF2.
+    fn rederive_key(passphrase: &str, salt: &[u8]) -> KeyDerivationResult {
         let mut mac = Hmac::new(Sha512::new(), passphrase.as_bytes());
         let mut pbkdf_result = Zeroizing::new([0u8; KEY_SIZE * 2]);
 
@@ -320,7 +330,9 @@ impl EncryptedMmapDirectory {
         (Zeroizing::new(Vec::from(key)), Zeroizing::new(Vec::from(hmac_key)))
     }
 
-    fn derive_key(passphrase: &str) -> Result<KeyDerivationResult, OpenDirectoryError> {
+    /// Generate a random salt and derive two keys from the salt and the given
+    /// passphrase.
+    fn derive_key(passphrase: &str) -> Result<InitialKeyDerivationResult, OpenDirectoryError> {
         let mut rng = thread_rng();
         let mut salt = vec![0u8; SALT_SIZE];
         rng.try_fill(&mut salt[..]).map_err(|e| {
