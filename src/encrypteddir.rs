@@ -118,12 +118,19 @@ impl EncryptedMmapDirectory {
         })
     }
 
+    /// Change the passphrase that is used to encrypt the store key.
+    /// This will decrypt and re-encrypt the store key using the new passphrase.
+    /// # Arguments
+    ///
+    /// * `path` - The path where the directory resides in.
+    /// * `old_passphrase` - The currently used passphrase.
+    /// * `new_passphrase` - The passphrase that should be used from now on.
     pub fn change_passphrase<P: AsRef<Path>>(
         path: P,
-        old: &str,
-        new: &str,
+        old_passphrase: &str,
+        new_passphrase: &str,
     ) -> Result<(), OpenDirectoryError> {
-        if old.is_empty() || new.is_empty() {
+        if old_passphrase.is_empty() || new_passphrase.is_empty() {
             return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
         }
 
@@ -131,9 +138,9 @@ impl EncryptedMmapDirectory {
         let key_file = File::open(&key_path)?;
 
         // Load our store key using the old passphrase.
-        let store_key = EncryptedMmapDirectory::load_store_key(key_file, old)?;
+        let store_key = EncryptedMmapDirectory::load_store_key(key_file, old_passphrase)?;
         // Derive new encryption keys using the new passphrase.
-        let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(new)?;
+        let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(new_passphrase)?;
         // Re-encrypt our store key using the newly derived keys.
         EncryptedMmapDirectory::encrypt_store_key(&key, &salt, &hmac_key, &store_key, &key_path)?;
 

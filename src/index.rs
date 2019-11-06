@@ -210,10 +210,10 @@ impl Index {
 
     pub fn change_passphrase<P: AsRef<Path>>(
         path: P,
-        old: &str,
-        new: &str,
+        old_passphrase: &str,
+        new_passphrase: &str,
     ) -> Result<(), tv::Error> {
-        EncryptedMmapDirectory::change_passphrase(path, old, new)?;
+        EncryptedMmapDirectory::change_passphrase(path, old_passphrase, new_passphrase)?;
         Ok(())
     }
 
