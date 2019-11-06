@@ -54,17 +54,31 @@ type InitialKeyDerivationResult = (KeyBuffer, KeyBuffer, Vec<u8>);
 /// read from our key file and we will re-derive our encryption and MAC keys.
 type KeyDerivationResult = (KeyBuffer, KeyBuffer);
 
+// The constants here are chosen to be similar to the constants for the Matrix
+// key export format[1].
+// [1] https://matrix.org/docs/spec/client_server/r0.5.0#key-exports
 const KEYFILE: &str = "seshat-index.key";
+// 16 byte random salt.
 const SALT_SIZE: usize = 16;
+// 16 byte random IV for the AES-CTR mode.
 const IV_SIZE: usize = 16;
+// 32 byte or 256 bit encryption keys.
 const KEY_SIZE: usize = 32;
+// 32 byte message authentication code since HMAC-SHA256 is used.
 const MAC_LENGTH: usize = 32;
+// 1 byte for the store version.
 const VERSION: u8 = 1;
 
 #[cfg(test)]
+// Tests don't need to protect against brute force attacks.
 const PBKDF_COUNT: u32 = 10;
 
 #[cfg(not(test))]
+// This is quite a bit lower than the spec since the encrypted key and index
+// will not be public. An attacker would need to get hold of the encrypted index,
+// its key and only then move on to bruteforcing the key. Even if the attacker
+// decrypts the index he wouldn't get to the events itself, only to the index
+// of them.
 const PBKDF_COUNT: u32 = 10_000;
 
 impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
@@ -86,6 +100,17 @@ pub struct EncryptedMmapDirectory {
 }
 
 impl EncryptedMmapDirectory {
+    /// Open a encrypted mmap directory. If the directory is empty a new
+    /// directory key will be generated and encrypted with the given passphrase.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path where the directory should reside in.
+    /// * `passphrase` - The passphrase.
+    ///
+    /// Returns an error if the path does not exist, if it is not a directory or
+    /// if there was an error when trying to decrypt the directory key e.g. the
+    /// given passphrase was incorrect.
     pub fn open<P: AsRef<Path>>(path: P, passphrase: &str) -> Result<Self, OpenDirectoryError> {
         let path = PathBuf::from(path.as_ref());
 
@@ -147,22 +172,31 @@ impl EncryptedMmapDirectory {
         Ok(())
     }
 
+    /// Expand the given store key into an encryption key and HMAC key.
     fn expand_store_key(store_key: &[u8]) -> (KeyBuffer, KeyBuffer) {
         let mut hkdf_result = Zeroizing::new([0u8; KEY_SIZE * 2]);
 
         hkdf_expand(Sha512::new(), &store_key, &[], &mut *hkdf_result);
         let (key, hmac_key) = hkdf_result.split_at(KEY_SIZE);
-        (Zeroizing::new(Vec::from(key)), Zeroizing::new(Vec::from(hmac_key)))
+        (
+            Zeroizing::new(Vec::from(key)),
+            Zeroizing::new(Vec::from(hmac_key)),
+        )
     }
 
-    fn load_store_key(mut key_file: File, passphrase: &str) -> Result<KeyBuffer, OpenDirectoryError> {
+    /// Load a store key from the given file and decrypt it using the given
+    /// passphrase.
+    fn load_store_key(
+        mut key_file: File,
+        passphrase: &str,
+    ) -> Result<KeyBuffer, OpenDirectoryError> {
         let mut iv = [0u8; IV_SIZE];
         let mut salt = [0u8; SALT_SIZE];
         let mut expected_mac = [0u8; MAC_LENGTH];
         let mut version = [0u8; 1];
         let mut encrypted_key = vec![];
 
-        // Read our iv, salt and encrypted key from our key file.
+        // Read our iv, salt, mac, and encrypted key from our key file.
         key_file.read_exact(&mut version)?;
         key_file.read_exact(&mut iv)?;
         key_file.read_exact(&mut salt)?;
@@ -176,6 +210,7 @@ impl EncryptedMmapDirectory {
         // Rederive our key using the passphrase and salt.
         let (key, hmac_key) = EncryptedMmapDirectory::rederive_key(passphrase, &salt);
 
+        // First check our MAC of the encrypted key.
         let expected_mac = MacResult::new(&expected_mac);
         let mac = EncryptedMmapDirectory::calculate_hmac(
             version[0],
@@ -224,6 +259,7 @@ impl EncryptedMmapDirectory {
         Ok(out)
     }
 
+    /// Calculate a HMAC for the given inputs.
     fn calculate_hmac(
         version: u8,
         iv: &[u8],
@@ -239,7 +275,12 @@ impl EncryptedMmapDirectory {
         hmac.result()
     }
 
-    fn create_new_store(key_path: &Path, passphrase: &str) -> Result<KeyBuffer, OpenDirectoryError> {
+    /// Create a new store key, encrypt it with the given passphrase and store
+    /// it in the given path.
+    fn create_new_store(
+        key_path: &Path,
+        passphrase: &str,
+    ) -> Result<KeyBuffer, OpenDirectoryError> {
         // Derive a AES key from our passphrase using a randomly generated salt
         // to prevent bruteforce attempts using rainbow tables.
         let (key, hmac_key, salt) = EncryptedMmapDirectory::derive_key(passphrase)?;
@@ -254,6 +295,7 @@ impl EncryptedMmapDirectory {
         Ok(store_key)
     }
 
+    /// Encrypt the given store key and save it in the given path.
     fn encrypt_store_key(
         key: &[u8],
         salt: &[u8],
@@ -300,6 +342,8 @@ impl EncryptedMmapDirectory {
             }
         }
 
+        // Calculate a MAC for our encrypted key and store it in the file before
+        // the key.
         let mac =
             EncryptedMmapDirectory::calculate_hmac(VERSION, &iv, &salt, &encrypted_key, &hmac_key);
         key_file.write_all(mac.code())?;
@@ -310,6 +354,7 @@ impl EncryptedMmapDirectory {
         Ok(())
     }
 
+    /// Generate a random IV.
     fn generate_iv() -> Result<Vec<u8>, OpenDirectoryError> {
         let mut iv = vec![0u8; IV_SIZE];
         let mut rng = thread_rng();
@@ -318,6 +363,7 @@ impl EncryptedMmapDirectory {
         Ok(iv)
     }
 
+    /// Generate a random key.
     fn generate_key() -> Result<KeyBuffer, OpenDirectoryError> {
         let mut key = Zeroizing::new(vec![0u8; KEY_SIZE]);
         let mut rng = thread_rng();
@@ -334,7 +380,10 @@ impl EncryptedMmapDirectory {
 
         pbkdf2(&mut mac, &salt, PBKDF_COUNT, &mut *pbkdf_result);
         let (key, hmac_key) = pbkdf_result.split_at(KEY_SIZE);
-        (Zeroizing::new(Vec::from(key)), Zeroizing::new(Vec::from(hmac_key)))
+        (
+            Zeroizing::new(Vec::from(key)),
+            Zeroizing::new(Vec::from(hmac_key)),
+        )
     }
 
     /// Generate a random salt and derive two keys from the salt and the given
@@ -351,6 +400,8 @@ impl EncryptedMmapDirectory {
     }
 }
 
+// The Directory trait[dr] implementation for our EncryptedMmapDirectory.
+// [dr] https://docs.rs/tantivy/0.10.2/tantivy/directory/trait.Directory.html
 impl Directory for EncryptedMmapDirectory {
     fn open_read(&self, path: &Path) -> Result<ReadOnlySource, OpenReadError> {
         let source = self.mmap_dir.open_read(path)?;
@@ -420,6 +471,9 @@ impl Directory for EncryptedMmapDirectory {
     }
 
     fn acquire_lock(&self, lock: &Lock) -> Result<DirectoryLock, LockError> {
+        // The lock files aren't encrypted, this is fine since they won't
+        // contain any data. They will be an empty file and a lock will be
+        // placed on them using e.g. flock(2) on macOS and Linux.
         self.mmap_dir.acquire_lock(lock)
     }
 }
