@@ -42,10 +42,6 @@ use tantivy::directory::{
 
 use zeroize::Zeroizing;
 
-pub struct AesFile<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write>(
-    AesWriter<E, M, W>,
-);
-
 type KeyBuffer = Zeroizing<Vec<u8>>;
 type KeyDerivationResult = (KeyBuffer, KeyBuffer, Vec<u8>);
 
@@ -62,25 +58,17 @@ const PBKDF_COUNT: u32 = 10;
 #[cfg(not(test))]
 const PBKDF_COUNT: u32 = 10_000;
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> Write for AesFile<E, M, W> {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.write(buf)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0.flush()
-    }
-}
-
 impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
-    for AesFile<E, M, W>
+    for AesWriter<E, M, W>
 {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
-        self.0.flush()
+        self.flush()
     }
 }
 
 #[derive(Clone, Debug)]
+/// A Directory implementation that wraps a MmapDirectory and adds AES based
+/// encryption to the file read/write operations.
 pub struct EncryptedMmapDirectory {
     path: PathBuf,
     mmap_dir: tantivy::directory::MmapDirectory,
@@ -378,8 +366,7 @@ impl Directory for EncryptedMmapDirectory {
         let encryptor = AesSafe256Encryptor::new(&self.encryption_key);
         let mac = Hmac::new(Sha256::new(), &self.mac_key);
         let writer = AesWriter::new(file, encryptor, mac).map_err(TvIoError::from)?;
-        let file = AesFile(writer);
-        Ok(BufWriter::new(Box::new(file)))
+        Ok(BufWriter::new(Box::new(writer)))
     }
 
     fn atomic_read(&self, path: &Path) -> Result<Vec<u8>, OpenReadError> {
