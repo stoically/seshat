@@ -28,8 +28,6 @@ use crypto::pbkdf2::pbkdf2;
 use crypto::sha2::{Sha256, Sha512};
 use crypto::symmetriccipher::{Decryptor, Encryptor};
 
-use crate::aesstream::{AesReader, AesWriter};
-
 use tantivy::directory::error::IOError as TvIoError;
 use tantivy::directory::error::{
     DeleteError, LockError, OpenDirectoryError, OpenReadError, OpenWriteError,
@@ -41,6 +39,8 @@ use tantivy::directory::{
 };
 
 use zeroize::Zeroizing;
+
+use crate::aesstream::{AesReader, AesWriter};
 
 /// KeyBuffer type that makes sure that the buffer is zeroed out before being
 /// dropped.
