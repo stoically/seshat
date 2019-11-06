@@ -80,17 +80,15 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
     ///
     /// # Parameters
     ///
-    /// * **buf**: Plaintext to encrypt and write
-    /// * **eof**: If the provided buf is the last one to come and therefore encryption should be
-    ///     finished and padding added.
-    fn encrypt_write(&mut self, buf: &[u8], eof: bool) -> Result<usize> {
+    /// * `buf`: Plaintext to encrypt and write.
+    fn encrypt_write(&mut self, buf: &[u8]) -> Result<usize> {
         let mut read_buf = RefReadBuffer::new(buf);
         let mut out = [0u8; BUFFER_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
         loop {
             let res = self
                 .enc
-                .encrypt(&mut read_buf, &mut write_buf, eof)
+                .encrypt(&mut read_buf, &mut write_buf, false)
                 .map_err(|e| Error::new(ErrorKind::Other, format!("encryption error: {:?}", e)))?;
             let mut enc = write_buf.take_read_buffer();
             let enc = enc.take_remaining();
@@ -98,9 +96,6 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
             self.mac.input(enc);
             match res {
                 BufferResult::BufferUnderflow => break,
-                BufferResult::BufferOverflow if eof => {
-                    panic!("read_buf underflow during encryption with eof")
-                }
                 BufferResult::BufferOverflow => {}
             }
         }
@@ -112,7 +107,7 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
 impl<E: BlockEncryptor, M: Mac, W: Write> Write for AesWriter<E, M, W> {
     /// Encrypts the passed buffer and writes the result to the underlying writer.
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let written = self.encrypt_write(buf, false)?;
+        let written = self.encrypt_write(buf)?;
         Ok(written)
     }
 
