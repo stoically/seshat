@@ -38,10 +38,12 @@ use rand::{thread_rng, Rng};
 
 const BUFFER_SIZE: usize = 8192;
 
-/// Wraps a [`Write`](https://doc.rust-lang.org/std/io/trait.Write.html) implementation with CBC
-/// based on given [`BlockEncryptor`][be]
+/// Wraps a [`Write`](https://doc.rust-lang.org/std/io/trait.Write.html) implementation with CTR
+/// based on the given [`BlockEncryptor`][be], additionally authenticates the
+/// writer with the given [`Mac`][mac]
 ///
 /// [be]: https://docs.rs/rust-crypto/0.2.36/crypto/symmetriccipher/trait.BlockEncryptor.html
+/// [mac]: https://docs.rs/rust-crypto/0.2.36/crypto/mac/trait.Mac.html
 ///
 pub struct AesWriter<E: BlockEncryptor, M: Mac, W: Write> {
     /// Writer to write encrypted data to
@@ -56,12 +58,16 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
     ///
     /// The IV will be written as first block of the file.
     ///
+    /// The MAC will be written at the end of the file.
+    ///
     /// # Parameters
     ///
-    /// * **writer**: Writer to write encrypted data into
-    /// * **enc**: [`BlockEncryptor`][be] to use for encyrption
+    /// * `writer`: Writer to write encrypted data into
+    /// * `enc`: [`BlockEncryptor`][be] to use for encyrption
+    /// * `mac`: [`Mac`][mac] to use for encyrption
     ///
     /// [be]: https://docs.rs/rust-crypto/0.2.36/crypto/symmetriccipher/trait.BlockEncryptor.html
+    /// [mac]: https://docs.rs/rust-crypto/0.2.36/crypto/mac/trait.Mac.html
     pub fn new(mut writer: W, enc: E, mac: M) -> Result<AesWriter<E, M, W>> {
         let mut iv = vec![0u8; enc.block_size()];
         let mut rng = thread_rng();
@@ -76,9 +82,9 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
         })
     }
 
-    /// Encrypts passed buffer and writes all resulting encrypted blocks to the underlying writer
+    /// Encrypts the passed buffer and writes all resulting encrypted blocks to the underlying writer
     ///
-    /// # Parameters
+    /// # Arguments
     ///
     /// * `buf`: Plaintext to encrypt and write.
     fn encrypt_write(&mut self, buf: &[u8]) -> Result<usize> {
@@ -119,7 +125,8 @@ impl<E: BlockEncryptor, M: Mac, W: Write> Write for AesWriter<E, M, W> {
 }
 
 impl<E: BlockEncryptor, M: Mac, W: Write> Drop for AesWriter<E, M, W> {
-    /// Drops this AesWriter trying to finish encryption and to write everything to the underlying writer.
+    /// Drop our AesWriter adding the MAC at the end of the file and flushing
+    /// our buffers.
     fn drop(&mut self) {
         if !std::thread::panicking() {
             let mac_result = self.mac.result();
