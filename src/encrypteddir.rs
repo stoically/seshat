@@ -321,7 +321,7 @@ impl EncryptedMmapDirectory {
         let mut encryptor = CtrMode::new(algorithm, iv.clone());
 
         let mut read_buf = RefReadBuffer::new(&store_key);
-        let mut out = [0u8; 1024];
+        let mut out = [0u8; KEY_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
         let mut encrypted_key = Vec::new();
 
@@ -334,23 +334,27 @@ impl EncryptedMmapDirectory {
         key_file.write_all(&salt)?;
 
         // Encrypt our key.
-        loop {
-            let res = encryptor
-                .encrypt(&mut read_buf, &mut write_buf, true)
-                .map_err(|e| {
-                    IoError::new(
-                        ErrorKind::Other,
-                        format!("unable to encrypt store key: {:?}", e),
-                    )
-                })?;
-            let mut enc = write_buf.take_read_buffer();
-            let mut enc = Vec::from(enc.take_remaining());
+        let res = encryptor
+            .encrypt(&mut read_buf, &mut write_buf, true)
+            .map_err(|e| {
+                IoError::new(
+                    ErrorKind::Other,
+                    format!("unable to encrypt store key: {:?}", e),
+                )
+            })?;
+        let mut enc = write_buf.take_read_buffer();
+        let mut enc = Vec::from(enc.take_remaining());
 
-            encrypted_key.append(&mut enc);
+        encrypted_key.append(&mut enc);
 
-            match res {
-                BufferResult::BufferUnderflow => break,
-                _ => panic!("Couldn't encrypt the store key"),
+        match res {
+            BufferResult::BufferUnderflow => (),
+            _ => {
+                return Err(IoError::new(
+                    ErrorKind::Other,
+                    "unable to encrypt store key: unable to encrypt whole plaintext".to_string(),
+                )
+                .into());
             }
         }
 
