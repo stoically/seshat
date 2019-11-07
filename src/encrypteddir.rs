@@ -446,7 +446,10 @@ impl Directory for EncryptedMmapDirectory {
     fn open_write(&mut self, path: &Path) -> Result<WritePtr, OpenWriteError> {
         let file = match self.mmap_dir.open_write(path)?.into_inner() {
             Ok(f) => f,
-            Err(e) => panic!(e.to_string()),
+            Err(e) => {
+                let error = IoError::from(e);
+                return Err(TvIoError::from(error).into());
+            }
         };
 
         let encryptor = AesSafe256Encryptor::new(&self.encryption_key);
