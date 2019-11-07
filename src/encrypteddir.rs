@@ -104,17 +104,17 @@ impl EncryptedMmapDirectory {
     /// if there was an error when trying to decrypt the directory key e.g. the
     /// given passphrase was incorrect.
     pub fn open<P: AsRef<Path>>(path: P, passphrase: &str) -> Result<Self, OpenDirectoryError> {
-        let path = PathBuf::from(path.as_ref());
-
-        let key_path = path.as_path().join(KEYFILE);
-        let mmap_dir = tantivy::directory::MmapDirectory::open(&path)?;
-
         if passphrase.is_empty() {
             return Err(IoError::new(ErrorKind::Other, "empty passphrase").into());
         }
 
+        let path = PathBuf::from(path.as_ref());
+        let key_path = path.as_path().join(KEYFILE);
+
         let key_file = File::open(&key_path);
 
+        // Either load a store key or create a new store key if the key file
+        // doesn't exist.
         let store_key = match key_file {
             Ok(k) => EncryptedMmapDirectory::load_store_key(k, passphrase)?,
             Err(e) => {
@@ -125,7 +125,11 @@ impl EncryptedMmapDirectory {
             }
         };
 
+        // Expand the store key into a encryption and MAC key.
         let (encryption_key, mac_key) = EncryptedMmapDirectory::expand_store_key(&store_key);
+
+        // Open our underlying bare tantivy mmap based directory.
+        let mmap_dir = tantivy::directory::MmapDirectory::open(&path)?;
 
         Ok(EncryptedMmapDirectory {
             path,
@@ -137,6 +141,7 @@ impl EncryptedMmapDirectory {
 
     /// Change the passphrase that is used to encrypt the store key.
     /// This will decrypt and re-encrypt the store key using the new passphrase.
+    ///
     /// # Arguments
     ///
     /// * `path` - The path where the directory resides in.
