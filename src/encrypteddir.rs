@@ -81,14 +81,6 @@ const PBKDF_COUNT: u32 = 10;
 // of them.
 const PBKDF_COUNT: u32 = 10_000;
 
-impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
-    for AesWriter<E, M, W>
-{
-    fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
-        self.flush()
-    }
-}
-
 #[derive(Clone, Debug)]
 /// A Directory implementation that wraps a MmapDirectory and adds AES based
 /// encryption to the file read/write operations.
@@ -494,6 +486,18 @@ impl Directory for EncryptedMmapDirectory {
         // contain any data. They will be an empty file and a lock will be
         // placed on them using e.g. flock(2) on macOS and Linux.
         self.mmap_dir.acquire_lock(lock)
+    }
+}
+
+// This tantivy trait is used to indicate when no more writes are expected to be
+// done on a writer.
+// We could probably move the Mac calculation to happen here instead of in the
+// Drop implementation of the AesWriter.
+impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
+    for AesWriter<E, M, W>
+{
+    fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
+        self.flush()
     }
 }
 
