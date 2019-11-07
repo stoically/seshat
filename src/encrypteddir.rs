@@ -256,7 +256,7 @@ impl EncryptedMmapDirectory {
         if remaining != 0 {
             return Err(IoError::new(
                 ErrorKind::Other,
-                "unable to decrypt whole store key ciphertext",
+                "unable to decrypt complete store key ciphertext",
             )
             .into());
         }
