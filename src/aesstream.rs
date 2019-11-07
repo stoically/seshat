@@ -60,7 +60,7 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
     ///
     /// The MAC will be written at the end of the file.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
     /// * `writer`: Writer to write encrypted data into
     /// * `enc`: [`BlockEncryptor`][be] to use for encyrption
@@ -164,12 +164,14 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
     ///
     /// Assumes that the first block of given reader is the IV.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// * **reader**: Reader to read encrypted data from
-    /// * **dec**: [`BlockDecryptor`][bd] to use for decyrption
+    /// * `reader`: Reader to read encrypted data from
+    /// * `dec`: [`BlockDecryptor`][bd] to use for decyrption
+    /// * `mac`: [`Mac`][mac] to use for authentication
     ///
     /// [bd]: https://docs.rs/rust-crypto/0.2.36/crypto/symmetriccipher/trait.BlockDecryptor.html
+    /// [mac]: https://docs.rs/rust-crypto/0.2.36/crypto/mac/trait.Mac.html
     pub fn new<M: Mac>(mut reader: R, dec: D, mut mac: M) -> Result<AesReader<D, R>> {
         let iv_length = dec.block_size();
         let mac_length = mac.output_bytes();
@@ -226,6 +228,15 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         })
     }
 
+    /// Read bytes from a reader until the start of the MAC instead of until the
+    /// end of file.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader`: Reader to read encrypted data from
+    /// * `total_length`: The total number of bytes that the reader contains.
+    /// * `mac_length`: The length of the MAC that is stored the file we are
+    /// reading from.
     fn read_until_mac(
         reader: &mut R,
         total_length: u64,
@@ -251,7 +262,8 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         Ok((buffer, eof))
     }
 
-    /// Reads at max BUFFER_SIZE bytes, handles potential eof and returns the buffer as Vec<u8>
+    /// Reads at max BUFFER_SIZE bytes, handles potential eof and returns the
+    /// buffer as Vec<u8>
     fn fill_buf(&mut self) -> Result<Vec<u8>> {
         let (buffer, eof) =
             AesReader::<D, R>::read_until_mac(&mut self.reader, self.length, self.mac_length)?;
@@ -261,11 +273,11 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
 
     /// Reads and decrypts data from the underlying stream and writes it into the passed buffer.
     ///
-    /// # Parameters
+    /// # Arguments
     ///
-    /// * **buf**: Buffer to write decrypted data into.
+    /// * `buf`: Buffer to write decrypted data into.
     fn read_decrypt(&mut self, buf: &mut [u8]) -> Result<usize> {
-        // if this is the first iteration, fill internal buffer
+        // If this is the first iteration, fill our internal buffer
         if self.buffer.is_empty() && !self.eof {
             self.buffer = self.fill_buf()?;
         }
@@ -277,29 +289,30 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
         {
             let mut read_buf = RefReadBuffer::new(&self.buffer);
 
-            // test if CbcDecryptor still has enough decrypted data or we have enough buffered
+            // Test if our decryptor still has enough decrypted data or we have
+            // enough buffered.
             res = self
                 .dec
                 .decrypt(&mut read_buf, &mut write_buf, self.eof)
                 .map_err(|e| Error::new(ErrorKind::Other, format!("decryption error: {:?}", e)))?;
             remaining = read_buf.remaining();
         }
-        // keep remaining bytes
+        // Keep the remaining bytes
         let len = self.buffer.len();
         self.buffer.drain(..(len - remaining));
-        // if we were able to decrypt, return early
+
+        // If we were able to decrypt the whole file, return early.
         match res {
             BufferResult::BufferOverflow => return Ok(buf_len),
             BufferResult::BufferUnderflow if self.eof => return Ok(write_buf.position()),
             _ => {}
         }
 
-        // else read new buffer
+        // Otherwise read/decrypt more.
         let mut dec_len = 0;
-        // We must return something, if we have something.
-        // If the reader doesn't return enough so that we can decrypt a block, we need to continue
-        // reading until we have enough data to return one decrypted block, or until we reach eof.
-        // If we reach eof, we will be able to decrypt the final block because of padding.
+        // If the reader doesn't return enough so that we can decrypt a block,
+        // we need to continue reading until we have enough data to return one
+        // decrypted block, or until we reach eof.
         while dec_len == 0 && !self.eof {
             let eof_buffer = self.fill_buf()?;
             let remaining;
@@ -315,10 +328,10 @@ impl<D: BlockEncryptor, R: Read + Seek> AesReader<D, R> {
                 dec_len = dec.len();
                 remaining = read_buf.remaining();
             }
-            // keep remaining bytes
+            // Keep the remaining bytes
             let len = self.buffer.len();
             self.buffer.drain(..(len - remaining));
-            // append newly read bytes
+            // Append the newly read bytes
             self.buffer.extend(eof_buffer);
         }
         Ok(dec_len)
