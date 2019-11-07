@@ -276,14 +276,14 @@ impl EncryptedMmapDirectory {
         version: u8,
         iv: &[u8],
         salt: &[u8],
-        encrypted_key: &[u8],
-        key: &[u8],
+        encrypted_data: &[u8],
+        hmac_key: &[u8],
     ) -> MacResult {
-        let mut hmac = Hmac::new(Sha256::new(), key);
+        let mut hmac = Hmac::new(Sha256::new(), hmac_key);
         hmac.input(&[version]);
         hmac.input(&iv);
         hmac.input(&salt);
-        hmac.input(&encrypted_key);
+        hmac.input(&encrypted_data);
         hmac.result()
     }
 
