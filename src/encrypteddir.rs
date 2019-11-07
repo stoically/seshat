@@ -201,7 +201,14 @@ impl EncryptedMmapDirectory {
         key_file.read_exact(&mut iv)?;
         key_file.read_exact(&mut salt)?;
         key_file.read_exact(&mut expected_mac)?;
-        key_file.read_to_end(&mut encrypted_key)?;
+
+        // Our key will be AES encrypted in CTR mode meaning the ciphertext
+        // will have the same size as the plaintext. Read at most KEY_SIZE
+        // bytes here so we don't end up filling up memory unnecessarily if
+        // someone modifies the file.
+        key_file
+            .take(KEY_SIZE as u64)
+            .read_to_end(&mut encrypted_key)?;
 
         if version[0] != VERSION {
             return Err(IoError::new(ErrorKind::Other, "invalid index store version").into());
@@ -246,8 +253,13 @@ impl EncryptedMmapDirectory {
             remaining = read_buf.remaining();
         }
 
-        let len = encrypted_key.len();
-        encrypted_key.drain(..(len - remaining));
+        if remaining != 0 {
+            return Err(IoError::new(
+                ErrorKind::Other,
+                "unable to decrypt whole store key ciphertext",
+            )
+            .into());
+        }
 
         match res {
             BufferResult::BufferUnderflow => (),
