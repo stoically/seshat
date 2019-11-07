@@ -496,13 +496,11 @@ impl Directory for EncryptedMmapDirectory {
 
 // This tantivy trait is used to indicate when no more writes are expected to be
 // done on a writer.
-// We could probably move the Mac calculation to happen here instead of in the
-// Drop implementation of the AesWriter.
 impl<E: crypto::symmetriccipher::BlockEncryptor, M: Mac, W: Write> TerminatingWrite
     for AesWriter<E, M, W>
 {
     fn terminate_ref(&mut self, _: AntiCallToken) -> std::io::Result<()> {
-        self.flush()
+        self.finalize()
     }
 }
 
