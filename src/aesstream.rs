@@ -38,6 +38,12 @@ use rand::{thread_rng, Rng};
 
 const BUFFER_SIZE: usize = 8192;
 
+// TODO We may want to generalize our writer/reader to take a Encryptor instead
+// of a BlockEncryptor. This would allow us to swap easily between different
+// encryption algorithms like we can swap between different MAC algorithms. This
+// would require the new() method to take the IV/Nonce as an argument.
+// Chacha20/Poly1305 would be available to us this way.
+
 /// Wraps a [`Write`](https://doc.rust-lang.org/std/io/trait.Write.html) implementation with CTR
 /// based on the given [`BlockEncryptor`][be], additionally authenticates the
 /// writer with the given [`Mac`][mac]
