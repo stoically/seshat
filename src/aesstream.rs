@@ -161,10 +161,10 @@ impl<E: BlockEncryptor, M: Mac, W: Write> Drop for AesWriter<E, M, W> {
             return;
         }
 
-        if !std::thread::panicking() {
-            self.finalize().unwrap();
-        } else {
+        if std::thread::panicking() {
             let _ = self.finalize();
+        } else {
+            self.finalize().unwrap();
         }
     }
 }
