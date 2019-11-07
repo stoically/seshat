@@ -57,6 +57,7 @@ pub struct AesWriter<E: BlockEncryptor, M: Mac, W: Write> {
     /// Encryptor to encrypt data with
     enc: CtrMode<E>,
     mac: M,
+    finalized: bool,
 }
 
 impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
@@ -85,6 +86,7 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
             writer,
             enc: CtrMode::new(enc, iv),
             mac,
+            finalized: false,
         })
     }
 
@@ -93,14 +95,18 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
     /// # Arguments
     ///
     /// * `buf`: Plaintext to encrypt and write.
-    fn encrypt_write(&mut self, buf: &[u8]) -> Result<usize> {
+    fn encrypt_write(&mut self, buf: &[u8], eof: bool) -> Result<usize> {
+        if self.finalized {
+            return Err(Error::new(ErrorKind::Other, "File has been already finalized"));
+        }
+
         let mut read_buf = RefReadBuffer::new(buf);
         let mut out = [0u8; BUFFER_SIZE];
         let mut write_buf = RefWriteBuffer::new(&mut out);
         loop {
             let res = self
                 .enc
-                .encrypt(&mut read_buf, &mut write_buf, false)
+                .encrypt(&mut read_buf, &mut write_buf, eof)
                 .map_err(|e| Error::new(ErrorKind::Other, format!("encryption error: {:?}", e)))?;
             let mut enc = write_buf.take_read_buffer();
             let enc = enc.take_remaining();
@@ -114,12 +120,29 @@ impl<E: BlockEncryptor, M: Mac, W: Write> AesWriter<E, M, W> {
         assert_eq!(read_buf.remaining(), 0);
         Ok(buf.len())
     }
+
+    /// Finalize the file and mark it so no more writes can happen.
+    pub fn finalize(&mut self) -> Result<()> {
+        // If our encryptor is using padding this write will insert it now.
+        // Otherwise it will do nothing.
+        self.encrypt_write(&[], true)?;
+
+        // Write our mac after our encrypted data.
+        let mac_result = self.mac.result();
+        self.writer.write_all(mac_result.code())?;
+
+        // Mark the file as finalized and flush our underlying writer.
+        self.finalized = true;
+        self.flush()?;
+
+        Ok(())
+    }
 }
 
 impl<E: BlockEncryptor, M: Mac, W: Write> Write for AesWriter<E, M, W> {
     /// Encrypts the passed buffer and writes the result to the underlying writer.
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
-        let written = self.encrypt_write(buf)?;
+        let written = self.encrypt_write(buf, false)?;
         Ok(written)
     }
 
@@ -134,14 +157,14 @@ impl<E: BlockEncryptor, M: Mac, W: Write> Drop for AesWriter<E, M, W> {
     /// Drop our AesWriter adding the MAC at the end of the file and flushing
     /// our buffers.
     fn drop(&mut self) {
+        if self.finalized {
+            return;
+        }
+
         if !std::thread::panicking() {
-            let mac_result = self.mac.result();
-            self.writer.write_all(mac_result.code()).unwrap();
-            self.flush().unwrap();
+            self.finalize().unwrap();
         } else {
-            let mac_result = self.mac.result();
-            let _ = self.writer.write_all(mac_result.code());
-            let _ = self.flush();
+            let _ = self.finalize();
         }
     }
 }
