@@ -360,6 +360,9 @@ use crypto::aessafe::AesSafe128Encryptor;
 use crypto::hmac::Hmac;
 
 #[cfg(test)]
+use crypto::poly1305::Poly1305;
+
+#[cfg(test)]
 use crypto::sha2::Sha256;
 
 #[cfg(test)]
@@ -381,11 +384,38 @@ fn encrypt(data: &[u8]) -> Vec<u8> {
 }
 
 #[cfg(test)]
+fn encrypt_poly1305(data: &[u8]) -> Vec<u8> {
+    let key = [0u8; 16];
+    let hmac_key = [0u8; 32];
+
+    let mac = Poly1305::new(&hmac_key);
+    let block_enc = AesSafe128Encryptor::new(&key);
+    let mut enc = Vec::new();
+    {
+        let mut aes = AesWriter::new(&mut enc, block_enc, mac).unwrap();
+        aes.write_all(&data).unwrap();
+    }
+    enc
+}
+
+#[cfg(test)]
 fn decrypt<R: Read + Seek>(data: R) -> Vec<u8> {
     let key = [0u8; 16];
     let block_dec = AesSafe128Encryptor::new(&key);
     let mut dec = Vec::new();
     let hmac = Hmac::new(Sha256::new(), &key);
+    let mut aes = AesReader::new(data, block_dec, hmac).unwrap();
+    aes.read_to_end(&mut dec).unwrap();
+    dec
+}
+
+#[cfg(test)]
+fn decrypt_poly1305<R: Read + Seek>(data: R) -> Vec<u8> {
+    let key = [0u8; 16];
+    let hmac_key = [0u8; 32];
+    let block_dec = AesSafe128Encryptor::new(&key);
+    let mut dec = Vec::new();
+    let hmac = Poly1305::new(&hmac_key);
     let mut aes = AesReader::new(data, block_dec, hmac).unwrap();
     aes.read_to_end(&mut dec).unwrap();
     dec
@@ -419,10 +449,26 @@ fn enc_dec_single() {
 }
 
 #[test]
+fn enc_dec_single_poly() {
+    let orig = [0u8; 15];
+    let enc = encrypt_poly1305(&orig);
+    let dec = decrypt_poly1305(Cursor::new(&enc));
+    assert_eq!(dec, &orig);
+}
+
+#[test]
 fn enc_dec_single_full() {
     let orig = [0u8; 16];
     let enc = encrypt(&orig);
     let dec = decrypt(Cursor::new(&enc));
+    assert_eq!(dec, &orig);
+}
+
+#[test]
+fn enc_dec_single_full_poly() {
+    let orig = [0u8; 16];
+    let enc = encrypt_poly1305(&orig);
+    let dec = decrypt_poly1305(Cursor::new(&enc));
     assert_eq!(dec, &orig);
 }
 
