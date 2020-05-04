@@ -17,7 +17,7 @@ use neon::prelude::*;
 use neon_serde;
 use serde_json;
 use seshat::{
-    CheckpointDirection, Config, CrawlerCheckpoint, Event, EventType, Language, Profile, Receiver,
+    Config, CrawlerCheckpoint, Event, EventType, Language, Profile, Receiver,
     SearchConfig, SearchResult,
 };
 
@@ -116,14 +116,15 @@ pub(crate) fn parse_search_object(
     Ok((term, config))
 }
 
-pub(crate) fn parse_checkpoint(
-    cx: &mut CallContext<Seshat>,
-    argument: Option<Handle<JsValue>>,
+
+pub(crate) fn parse_checkpoint<'a>(
+    cx: &mut CallContext<'a, Seshat>,
+    argument: Option<Handle<'a, JsValue>>,
 ) -> Result<Option<CrawlerCheckpoint>, neon::result::Throw> {
     match argument {
-        Some(c) => match c.downcast::<JsObject>() {
-            Ok(object) => Ok(Some(js_checkpoint_to_rust(cx, *object)?)),
-            Err(_e) => {
+        Some(c) => match c.is_a::<JsObject>() {
+            true => Ok(Some(neon_serde::from_value(&mut *cx, c)?)),
+            false => {
                 let _o = c.downcast::<JsNull>().or_throw(cx)?;
                 Ok(None)
             }
@@ -415,45 +416,5 @@ pub(crate) fn parse_profile(
     Ok(Profile {
         displayname,
         avatar_url,
-    })
-}
-
-pub(crate) fn js_checkpoint_to_rust(
-    cx: &mut CallContext<Seshat>,
-    object: JsObject,
-) -> Result<CrawlerCheckpoint, neon::result::Throw> {
-    let room_id = object
-        .get(&mut *cx, "roomId")?
-        .downcast::<JsString>()
-        .or_throw(&mut *cx)?
-        .value();
-    let token = object
-        .get(&mut *cx, "token")?
-        .downcast::<JsString>()
-        .or_throw(&mut *cx)?
-        .value();
-    let full_crawl: bool = object
-        .get(&mut *cx, "fullCrawl")?
-        .downcast::<JsBoolean>()
-        .unwrap_or_else(|_| JsBoolean::new(&mut *cx, false))
-        .value();
-    let direction = object
-        .get(&mut *cx, "direction")?
-        .downcast::<JsString>()
-        .unwrap_or_else(|_| JsString::new(&mut *cx, ""))
-        .value();
-
-    let direction = match direction.to_lowercase().as_ref() {
-        "backwards" | "backward" | "b" => CheckpointDirection::Backwards,
-        "forwards" | "forward" | "f" => CheckpointDirection::Forwards,
-        "" => CheckpointDirection::Backwards,
-        d => return cx.throw_error(format!("Unknown checkpoint direction {}", d)),
-    };
-
-    Ok(CrawlerCheckpoint {
-        room_id,
-        token,
-        full_crawl,
-        direction,
     })
 }

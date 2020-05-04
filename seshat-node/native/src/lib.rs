@@ -16,7 +16,7 @@ mod tasks;
 mod utils;
 
 use neon::prelude::*;
-use seshat::{Database, Error, LoadConfig, LoadDirection, Profile, RecoveryDatabase, RecoveryInfo};
+use seshat::{Database, Error, LoadConfig, Profile, RecoveryDatabase, RecoveryInfo};
 use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
@@ -523,43 +523,9 @@ declare_types! {
         }
 
         method loadFileEvents(mut cx) {
-            let args = cx.argument::<JsObject>(0)?;
+            let args = cx.argument::<JsValue>(0)?;
             let f = cx.argument::<JsFunction>(1)?;
-
-            let room_id = args
-                    .get(&mut cx, "roomId")?
-                    .downcast::<JsString>()
-                    .or_throw(&mut cx)?
-                    .value();
-
-            let mut config = LoadConfig::new(room_id);
-
-            let limit = args
-                    .get(&mut cx, "limit")?
-                    .downcast::<JsNumber>()
-                    .or_throw(&mut cx)?
-                    .value();
-
-            config = config.limit(limit as usize);
-
-            if let Ok(e) = args.get(&mut cx, "fromEvent") {
-                if let Ok(e) = e.downcast::<JsString>() {
-                    config = config.from_event(e.value());
-                }
-            };
-
-            if let Ok(d) = args.get(&mut cx, "direction") {
-                if let Ok(e) = d.downcast::<JsString>() {
-                    let direction = match e.value().to_lowercase().as_ref() {
-                        "backwards" | "backward" | "b" => LoadDirection::Backwards,
-                        "forwards" | "forward" | "f" => LoadDirection::Forwards,
-                        "" => LoadDirection::Backwards,
-                        d => return cx.throw_error(format!("Unknown load direction {}", d)),
-                    };
-
-                    config = config.direction(direction);
-                }
-            }
+            let config: LoadConfig = neon_serde::from_value(&mut cx, args)?;
 
             let mut this = cx.this();
 
